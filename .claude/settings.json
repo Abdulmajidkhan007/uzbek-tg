@@ -1,5 +1,9 @@
 {
   "enabledPlugins": {
     "expo@claude-plugins-official": true
+  },
+  "model": "claude-sonnet-4-6",
+  "permissions": {
+    "allow": ["Bash", "Read", "Write", "Edit", "Skill"]
   }
 }
