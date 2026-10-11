@@ -11,9 +11,9 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
-import * as ImagePicker from 'expo-image-picker';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import * as Haptics from '@/utils/haptics';
+import { launchImageLibrary } from 'react-native-image-picker';
 import type { StackScreenProps } from '@react-navigation/stack';
 
 import { useTheme } from '@/hooks/useTheme';
@@ -93,22 +93,14 @@ export function EditProfileScreen({ navigation }: Props): React.JSX.Element {
 
   const handlePickImage = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permResult.granted) {
-      Alert.alert(
-        'Permission Denied',
-        'Please allow access to your photo library in Settings.'
-      );
+    const result = await launchImageLibrary({ mediaType: 'photo', quality: 0.8, selectionLimit: 1 });
+    if (result.errorCode != null) {
+      Alert.alert('Rasm tanlanmadi', result.errorMessage ?? result.errorCode);
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85,
-    });
-    if (!result.canceled && result.assets[0]?.uri != null) {
-      updateField('avatarUri', result.assets[0].uri);
+    const uri = result.assets?.[0]?.uri;
+    if (!result.didCancel && uri != null) {
+      updateField('avatarUri', uri);
     }
   }, [updateField]);
 

@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -25,7 +25,7 @@ import Animated, {
   withSpring,
   FadeIn,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import type { StackScreenProps } from '@react-navigation/stack';
 
 import { useTheme } from '@/hooks/useTheme';
@@ -438,7 +438,6 @@ export function ChatListScreen({ navigation }: Props) {
         data={filteredChats}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
-        estimatedItemSize={72}
         ListHeaderComponent={renderListHeader}
         ListEmptyComponent={renderEmpty}
         refreshControl={

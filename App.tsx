@@ -3,7 +3,7 @@ import { View, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { StatusBar } from 'expo-status-bar';
+import { StatusBar } from 'react-native';
 import { RootNavigator } from '@/navigation/RootNavigator';
 import { initAuthStore } from '@/stores/auth.store';
 import { initUIStore } from '@/stores/ui.store';
@@ -38,7 +38,10 @@ function AppContent(): React.JSX.Element {
         },
       }}
     >
-      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.colors.background}
+      />
       <RootNavigator />
     </NavigationContainer>
   );

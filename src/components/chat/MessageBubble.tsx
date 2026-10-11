@@ -6,9 +6,9 @@ import {
   StyleSheet,
   ViewStyle,
   TextStyle,
+  Image,
 } from 'react-native';
-import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { format } from 'date-fns';
 import { useTheme } from '@/hooks/useTheme';
 import { ChatMessage, Reaction } from '@/stores/chat.store';
@@ -319,9 +319,7 @@ const MessageBubble = React.memo(function MessageBubble({
           <Image
             source={{ uri: message.mediaUrl }}
             style={styles.imageThumb}
-            contentFit="cover"
-            transition={200}
-            cachePolicy="memory-disk"
+            resizeMode="cover"
           />
         </Pressable>
       );

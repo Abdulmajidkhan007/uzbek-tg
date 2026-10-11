@@ -1,0 +1,102 @@
+# Android APK → GitHub Release, telefondan o'rnatish uchun:
+#   https://github.com/Abdulmajidkhan007/uzbek-tg/releases/latest/download/uzbek-tg.apk
+#
+# 0-faza: ilova mock ma'lumot bilan ishlaydi, hech qanday kalit kerak emas.
+# 1-fazada TG_API_ID / TG_API_HASH secret'lari shu yerda BuildConfig'ga
+# beriladi (repoga yozilmaydi).
+#
+# Imzo: android/keystore.properties repoda yo'q, shuning uchun release build
+# debug kalit bilan imzolanadi — telefonga o'rnatish uchun yetarli, Play
+# Store uchun EMAS.
+name: APK Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'android/**'
+      - 'assets/**'
+      - 'App.tsx'
+      - 'index.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'babel.config.js'
+      - 'metro.config.js'
+      - '.github/workflows/apk-release.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-release
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Build release APK
+        env:
+          APP_VERSION_CODE: ${{ github.run_number }}
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          # Xato bo'lsa "What went wrong" bloki annotation bo'ladi — run
+          # sahifasidan (telefondan ham) log yuklamasdan o'qiladi.
+          set -o pipefail
+          if ! ./gradlew assembleRelease --no-daemon 2>&1 | tee "$RUNNER_TEMP/gradle.log"; then
+            msg=$(grep -A30 'What went wrong' "$RUNNER_TEMP/gradle.log" | head -45)
+            [ -n "$msg" ] || msg=$(tail -45 "$RUNNER_TEMP/gradle.log")
+            msg=${msg//'%'/'%25'}; msg=${msg//$'\r'/}; msg=${msg//$'\n'/'%0A'}
+            echo "::error title=Gradle build failed::$msg"
+            exit 1
+          fi
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/uzbek-tg.apk"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="${GITHUB_SHA::7}"
+          TAG="apk-${{ github.run_number }}"
+          # Katta fayl yuklash GitHub tomonida ba'zan uziladi — qayta urinish,
+          # xato annotation sifatida chiqadi.
+          for attempt in 1 2 3; do
+            if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+              gh release create "$TAG" \
+                --repo "$GITHUB_REPOSITORY" \
+                --target "$GITHUB_SHA" \
+                --title "Uzbek TG APK #${{ github.run_number }} ($SHA)" \
+                --notes "Android APK, commit $SHA. Mock ma'lumot (0-faza). Debug kalit bilan imzolangan — telefonga o'rnatish uchun, Play Store uchun emas." \
+                --latest 2> "$RUNNER_TEMP/gh.err" || true
+            fi
+            if gh release upload "$TAG" "$RUNNER_TEMP/uzbek-tg.apk" --clobber --repo "$GITHUB_REPOSITORY" 2>> "$RUNNER_TEMP/gh.err"; then
+              exit 0
+            fi
+            echo "Upload attempt $attempt failed; retrying in $((attempt * 20))s"
+            sleep $((attempt * 20))
+          done
+          msg=$(tail -5 "$RUNNER_TEMP/gh.err" | tr '\n' ' ')
+          echo "::error title=Release upload failed::$msg"
+          exit 1

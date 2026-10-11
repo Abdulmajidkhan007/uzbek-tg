@@ -8,8 +8,8 @@ import {
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import * as Haptics from '@/utils/haptics';
 import type { StackScreenProps } from '@react-navigation/stack';
 
 import { useTheme } from '@/hooks/useTheme';
@@ -215,7 +215,6 @@ export function BlockedUsersScreen({ navigation }: Props): React.JSX.Element {
           data={blockedUsers}
           renderItem={renderItem}
           keyExtractor={keyExtractor}
-          estimatedItemSize={68}
           contentContainerStyle={{
             paddingHorizontal: theme.spacing.lg,
             paddingTop: theme.spacing.xl,

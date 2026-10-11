@@ -8,8 +8,8 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import * as Haptics from '@/utils/haptics';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -280,7 +280,7 @@ export default function MessageInput({
     setIsRecording(false);
     const duration = recordingDuration;
     setRecordingDuration(0);
-    // In a real app the recorded URI would come from expo-av; here we call the
+    // In a real app the recorded URI would come from a native audio recorder; here we call the
     // callback with a placeholder URI and a flat waveform.
     if (duration > 0) {
       const waveform = Array.from({ length: 32 }, () => Math.random());

@@ -14,9 +14,9 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { FlashList } from '@shopify/flash-list';
-import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import * as Haptics from '@/utils/haptics';
 import type { StackScreenProps } from '@react-navigation/stack';
 
 import { useTheme } from '@/hooks/useTheme';
@@ -256,7 +256,7 @@ export function TopicDetailScreen({ route, navigation }: Props): React.JSX.Eleme
   const theme = useTheme();
   const { chatId, topicId, topicTitle } = route.params;
 
-  const listRef = useRef<FlashList<ChatMessage>>(null);
+  const listRef = useRef<FlashListRef<ChatMessage>>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -456,7 +456,6 @@ export function TopicDetailScreen({ route, navigation }: Props): React.JSX.Eleme
             data={messages}
             keyExtractor={keyExtractor}
             renderItem={renderItem}
-            estimatedItemSize={72}
             ListHeaderComponent={headerComponent}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: theme.spacing.md }}
