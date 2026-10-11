@@ -27,9 +27,11 @@
 - Ishlatilmagan `expo-av`, `expo-document-picker`, `expo-file-system`,
   `react-native-svg`, `react-native-image-viewing` olib tashlandi
   (ovozli xabar/hujjat — 2-fazada TDLib bilan birga qaytadi).
-- Tekshirilgan: `tsc --noEmit` toza, `react-native bundle` (android) o'tadi.
-  **Telefonda ochilishi hali tasdiqlanmagan** — birinchi CI APK'ni egasi
-  o'rnatib ko'rishi kerak.
+- Tekshirilgan (2026-10-11, sandbox): `tsc --noEmit` toza;
+  `./gradlew assembleRelease` (arm64-v8a, JDK 17) o'tdi — APK 28 MB,
+  `org.uzbektg.app`, ichida JS bundle, `Ionicons.ttf`, hermes/reanimated/
+  worklets `.so`. **Telefonda/emulatorda ochilishi hali tasdiqlanmagan**
+  (sandbox'da KVM yo'q) — birinchi CI APK'ni egasi o'rnatib ko'rishi kerak.
 
 ## Maqsad
 Telegram mijozi: haqiqiy akkaunt bilan kirish, chatlar, xabarlar, media;
