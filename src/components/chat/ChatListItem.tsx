@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { format, isToday, isYesterday, isThisWeek, isThisYear } from 'date-fns';
 import { useTheme } from '@/hooks/useTheme';
 import Avatar from '@/components/common/Avatar';

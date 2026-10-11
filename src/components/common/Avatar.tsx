@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
-import { Image } from 'expo-image';
+import { Image, View, Text, StyleSheet, ViewStyle } from 'react-native';
 import { useTheme } from '@/hooks/useTheme';
 
 // ---------------------------------------------------------------------------
@@ -79,9 +78,7 @@ const Avatar = React.memo(function Avatar({
         <Image
           source={{ uri }}
           style={[StyleSheet.absoluteFill, containerStyle as object]}
-          contentFit="cover"
-          transition={150}
-          cachePolicy="memory-disk"
+          resizeMode="cover"
         />
       ) : (
         <View

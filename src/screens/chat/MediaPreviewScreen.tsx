@@ -16,11 +16,11 @@ import {
   Share,
   Alert,
   StatusBar,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import * as Haptics from '@/utils/haptics';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -142,9 +142,7 @@ const ZoomableImage = React.memo(function ZoomableImage({
         <Image
           source={{ uri }}
           style={styles.fullImage}
-          contentFit="contain"
-          transition={200}
-          cachePolicy="memory-disk"
+          resizeMode="contain"
           accessibilityRole="image"
         />
       </Animated.View>

@@ -15,8 +15,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
-import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import * as Haptics from '@/utils/haptics';
 import type { StackScreenProps } from '@react-navigation/stack';
 
 import { useTheme } from '@/hooks/useTheme';
@@ -343,7 +343,6 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
           data={filteredChats}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
-          estimatedItemSize={72}
           ItemSeparatorComponent={renderSeparator}
           ListEmptyComponent={renderEmpty}
           showsVerticalScrollIndicator={false}

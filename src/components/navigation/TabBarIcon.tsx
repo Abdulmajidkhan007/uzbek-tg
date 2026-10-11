@@ -1,5 +1,5 @@
 import React from 'react';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 export type TabBarIconName = 'chats' | 'contacts' | 'search' | 'settings';
 
@@ -9,7 +9,7 @@ interface TabBarIconProps {
   size: number;
 }
 
-const iconMap: Record<TabBarIconName, keyof typeof Ionicons.glyphMap> = {
+const iconMap: Record<TabBarIconName, string> = {
   chats: 'chatbubble-ellipses',
   contacts: 'people',
   search: 'search',

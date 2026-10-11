@@ -1,6 +1,6 @@
 {
   "enabledPlugins": {
-    "expo@claude-plugins-official": true
+    "expo@claude-plugins-official": false
   },
   "model": "claude-sonnet-4-6",
   "permissions": {

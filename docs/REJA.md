@@ -1,14 +1,35 @@
 # uzbek-tg — reja
 
-> Oxirgi yangilanish: 2026-10-11
+> Oxirgi yangilanish: 2026-10-11 (0-faza kodi yozildi)
 
 ## Hozirgi holat (koddan)
-- Expo SDK 56 ilova ("Pulse Messenger" deb nomlangan): login → SMS kod →
-  profil → chatlar, guruhlar, kanallar, sozlamalar ekranlari bor.
-- **Backend yo'q:** hamma ma'lumot `src/data/mock` dan; SMS kod doim `12345`.
-- Kutubxona versiyalari aralash (masalan `expo-haptics` SDK 53 dan) —
-  `npm ci` peer xatosi bilan to'xtaydi.
-- 2026-10-11 sandbox'da veb export bilan ishga tushirildi, ekranlar ishlaydi.
+- **Bare React Native CLI 0.85.3** (New Architecture, Hermes), Expo olib
+  tashlandi. `android/` — KidsWear namunasidan: `org.uzbektg.app`,
+  crash ekrani (`CrashActivity`, alohida `:crash` jarayonda).
+- Ekranlar (Pulse UI): login → SMS kod → profil → chatlar, guruhlar,
+  kanallar, sozlamalar. **Backend yo'q:** hamma ma'lumot `src/data/mock` dan;
+  SMS kod doim `12345`.
+- CI: `.github/workflows/apk-release.yml` — `main` ga push'da APK yig'ib,
+  GitHub Release'ga `uzbek-tg.apk` qo'yadi (versionCode = run raqami).
+  Havola: `releases/latest/download/uzbek-tg.apk`.
+
+### 0-faza: Expo → RN CLI almashtirishlar
+| Expo | O'rniga |
+|---|---|
+| `@expo/vector-icons` (Ionicons) | `react-native-vector-icons/Ionicons` (faqat `Ionicons.ttf` APK'ga) |
+| `expo-haptics` | `src/utils/haptics.ts` (xuddi shu API) → `react-native-haptic-feedback` |
+| `expo-image` | RN `Image` (`resizeMode`); kesh/transition yo'q |
+| `expo-image-picker` | `react-native-image-picker` (`launchImageLibrary`; kesish/crop yo'q) |
+| `expo-status-bar` | RN `StatusBar` |
+| RN core `Clipboard` (eskirgan) | `@react-native-clipboard/clipboard` |
+| reanimated 3 | reanimated 4.6 + `react-native-worklets` 0.12 |
+| flash-list 1 | flash-list 2 (`estimatedItemSize` olib tashlandi, `FlashListRef`) |
+- Ishlatilmagan `expo-av`, `expo-document-picker`, `expo-file-system`,
+  `react-native-svg`, `react-native-image-viewing` olib tashlandi
+  (ovozli xabar/hujjat — 2-fazada TDLib bilan birga qaytadi).
+- Tekshirilgan: `tsc --noEmit` toza, `react-native bundle` (android) o'tadi.
+  **Telefonda ochilishi hali tasdiqlanmagan** — birinchi CI APK'ni egasi
+  o'rnatib ko'rishi kerak.
 
 ## Maqsad
 Telegram mijozi: haqiqiy akkaunt bilan kirish, chatlar, xabarlar, media;

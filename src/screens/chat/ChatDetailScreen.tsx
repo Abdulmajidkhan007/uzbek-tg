@@ -12,11 +12,11 @@ import {
   TouchableOpacity,
   Modal,
   Pressable,
-  Clipboard,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FlashList } from '@shopify/flash-list';
-import { Ionicons } from '@expo/vector-icons';
+import Clipboard from '@react-native-clipboard/clipboard';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -24,8 +24,9 @@ import Animated, {
   withSpring,
   FadeIn,
   Layout,
+  type SharedValue,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import { isToday, isYesterday, format, isSameDay } from 'date-fns';
 import type { StackScreenProps } from '@react-navigation/stack';
 
@@ -209,7 +210,7 @@ const TypingIndicatorBar = React.memo(function TypingIndicatorBar({
   const dot3 = useSharedValue(0);
 
   useEffect(() => {
-    const animate = (sv: Animated.SharedValue<number>, delay: number) => {
+    const animate = (sv: SharedValue<number>, delay: number) => {
       const loop = () => {
         sv.value = withTiming(-4, { duration: 300 }, () => {
           sv.value = withTiming(0, { duration: 300 }, () => {
@@ -507,7 +508,7 @@ export function ChatDetailScreen({ navigation, route }: Props) {
   const [isTyping, setIsTyping] = useState(false);
   const [showPinnedBar, setShowPinnedBar] = useState(true);
 
-  const listRef = useRef<FlashList<ListItem>>(null);
+  const listRef = useRef<FlashListRef<ListItem>>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ---------------------------------------------------------------------------
@@ -1000,7 +1001,6 @@ export function ChatDetailScreen({ navigation, route }: Props) {
           keyExtractor={keyExtractor}
           renderItem={renderItem}
           getItemType={getItemType}
-          estimatedItemSize={60}
           inverted
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{

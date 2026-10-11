@@ -13,9 +13,9 @@ import {
 } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
-import * as ImagePicker from 'expo-image-picker';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import * as Haptics from '@/utils/haptics';
+import { launchImageLibrary } from 'react-native-image-picker';
 import type { StackScreenProps } from '@react-navigation/stack';
 import type { AuthStackParamList } from '@/navigation/types';
 import { useTheme } from '@/hooks/useTheme';
@@ -53,21 +53,12 @@ export function ProfileSetupScreen({ route }: Props): React.JSX.Element {
 
   const handleAvatarPress = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') return;
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets.length > 0) {
-      const asset = result.assets[0];
-      if (asset) {
-        setAvatarUri(asset.uri);
-      }
+    // Android 13+ photo picker ruxsat so'ramaydi; eski versiyalarda ham
+    // ACTION_GET_CONTENT orqali ruxsatsiz ishlaydi.
+    const result = await launchImageLibrary({ mediaType: 'photo', quality: 0.8, selectionLimit: 1 });
+    const uri = result.assets?.[0]?.uri;
+    if (!result.didCancel && uri) {
+      setAvatarUri(uri);
     }
   }, []);
 

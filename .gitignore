@@ -1,5 +1,4 @@
 node_modules/
-.expo/
 dist/
 build/
 *.log
@@ -12,7 +11,10 @@ google-services.json
 google-service-account.json
 GoogleService-Info.plist
 
-# EAS local artifacts
+# Build artifacts
 *.ipa
 *.apk
 *.aab
+
+# Android (lokal SDK yo'li)
+android/local.properties

@@ -1,0 +1,84 @@
+apply plugin: "com.android.application"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "com.facebook.react"
+
+// Release imzo kaliti repoda yo'q (android/keystore.properties gitignore'da).
+// Yo'q bo'lsa release build debug kalit bilan imzolanadi — telefonga o'rnatish
+// uchun yetarli, Play Store uchun emas.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+def hasReleaseKeystore = keystorePropertiesFile.exists()
+if (hasReleaseKeystore) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
+react {
+    /* Autolinking */
+    autolinkLibrariesWithApp()
+}
+
+def enableProguardInReleaseBuilds = false
+
+def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
+
+// Oldindan hisoblanadi: Groovy `versionCode (x).toInteger()` ni
+// `versionCode(x).toInteger()` deb o'qib, versionCode'ga String beradi.
+def appVersionCode = (System.getenv('APP_VERSION_CODE') ?: '1').toInteger()
+
+android {
+    ndkVersion rootProject.ext.ndkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+    compileSdk rootProject.ext.compileSdkVersion
+
+    namespace "org.uzbektg.app"
+    defaultConfig {
+        applicationId "org.uzbektg.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        // CI (apk-release.yml) run raqamini beradi: har yangi APK eskisining
+        // ustiga yangilanish sifatida o'rnatiladi.
+        versionCode appVersionCode
+        versionName "0.1.${appVersionCode}"
+    }
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        if (hasReleaseKeystore) {
+            release {
+                storeFile rootProject.file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            signingConfig hasReleaseKeystore ? signingConfigs.release : signingConfigs.debug
+            minifyEnabled enableProguardInReleaseBuilds
+            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
+    }
+}
+
+// Ekranlar faqat Ionicons ishlatadi — APK'ga shu shrift qo'shiladi.
+project.ext.vectoricons = [ iconFontNames: [ 'Ionicons.ttf' ] ]
+apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
+
+dependencies {
+    // react-native versiyasini React Native Gradle Plugin belgilaydi
+    implementation("com.facebook.react:react-android")
+
+    if (hermesEnabled.toBoolean()) {
+        implementation("com.facebook.react:hermes-android")
+    } else {
+        implementation jscFlavor
+    }
+}
