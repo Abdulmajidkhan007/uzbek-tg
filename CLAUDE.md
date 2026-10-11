@@ -22,4 +22,9 @@
 - Rasmiy Telegram ilovalari kodi GPL — undan kod ko'chirilmaydi (faqat g'oya).
   TDLib — Boost litsenziyasi, ishlatish mumkin.
 - Holatni bo'rttirmaslik: ishlamaydigan narsa "tayyor" deb yozilmaydi.
-- Har bosqichdan keyin commit + push `main` ga; PR faqat so'ralsa.
+- Git oqimi: ish sessiya branch'ida commit + push → `main` ga PR ochiladi →
+  Claude o'zi merge qiladi. Eng oxirgi ish doim `main` da bo'lishi kerak
+  (APK workflow faqat `main` ga push'da ishga tushadi).
+- Repo private: `releases/latest/download/uzbek-tg.apk` havolasi faqat
+  GitHub'ga kirgan (login) brauzerda ochiladi; release CI tugagandan keyin
+  paydo bo'ladi.
