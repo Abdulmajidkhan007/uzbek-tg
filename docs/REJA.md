@@ -70,6 +70,15 @@
   yig'iladi; barcha TDLib so'rov/maydon nomlari 1.8.68 `td_api.tl` bilan
   solishtirildi.
 
+### Release imzo kaliti
+- `.github/workflows/release-keystore.yml` (qo'lda, `confirm=HA`) — PKCS12 kalit
+  (alias `uzbektg`, RSA 4096, tasodifiy parol) yaratib, 1 kunlik artifact beradi.
+- Egasi 2 ta secret qo'yadi: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`;
+  `.jks` faylni zaxiralaydi (yo'qolsa ilovani yangilab bo'lmaydi).
+- APK workflow'i secret bo'lsa release kalit bilan, bo'lmasa debug kalit bilan
+  imzolaydi (release notes'da `Imzo: release|debug`). Debug → release o'tishda
+  telefondagi ilovani bir marta o'chirib qayta o'rnatish kerak.
+
 ## Maqsad
 Telegram mijozi: haqiqiy akkaunt bilan kirish, chatlar, xabarlar, media;
 ustiga **ghost mode** (o'qilgan belgisi yo'q, "online" yo'q, "yozmoqda" yo'q)
