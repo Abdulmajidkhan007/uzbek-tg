@@ -25,7 +25,8 @@ import { useTheme } from '@/hooks/useTheme';
 import Avatar from '@/components/common/Avatar';
 import EmptyState from '@/components/common/EmptyState';
 import Divider from '@/components/ui/Divider';
-import { mockUsers, mockChats, mockPrivateChatMessages, mockGroupMessages } from '@/data/mock';
+import { chatName, openPrivateChat, searchChats, searchMessages } from '@/services/tdlib/chats';
+import { useChatStore } from '@/stores/chat.store';
 import type { ChatStackParamList } from '@/navigation/types';
 import type { UserPreview, Chat, ChatMessage } from '@/stores/chat.store';
 
@@ -320,17 +321,16 @@ export function SearchScreen(): React.JSX.Element {
       if (result.kind === 'people') {
         const fullName = `${result.user.firstName}${result.user.lastName ? ` ${result.user.lastName}` : ''}`;
         addToRecent(fullName);
-        const existingChat = mockChats.find(
-          (c) => c.type === 'private' && c.otherUser?.id === result.user.id,
-        );
-        if (existingChat) {
-          navigation.navigate('ChatDetail', {
-            chatId: existingChat.id,
-            chatType: existingChat.type,
-            title: existingChat.name,
-            avatarUrl: existingChat.avatarUrl,
-          });
-        }
+        openPrivateChat(result.user.id)
+          .then((chat) =>
+            navigation.navigate('ChatDetail', {
+              chatId: chat.id,
+              chatType: chat.type,
+              title: chat.name,
+              avatarUrl: chat.avatarUrl,
+            }),
+          )
+          .catch(() => undefined);
       } else if (result.kind === 'chat') {
         addToRecent(result.chat.name);
         navigation.navigate('ChatDetail', {
@@ -341,52 +341,51 @@ export function SearchScreen(): React.JSX.Element {
         });
       } else {
         addToRecent(result.chatName);
-        const chat = mockChats.find((c) => c.id === result.message.chatId);
-        if (chat) {
-          navigation.navigate('ChatDetail', {
-            chatId: chat.id,
-            chatType: chat.type,
-            title: chat.name,
-            avatarUrl: chat.avatarUrl,
-          });
-        }
+        const chat = useChatStore.getState().chats.find((c) => c.id === result.message.chatId);
+        navigation.navigate('ChatDetail', {
+          chatId: result.message.chatId,
+          chatType: chat?.type ?? 'group',
+          title: chat?.name ?? result.chatName,
+          avatarUrl: chat?.avatarUrl,
+        });
       }
     },
     [navigation, addToRecent],
   );
 
-  const sections = useMemo<ResultSection[]>(() => {
-    if (debouncedQuery.length < 2) return [];
-    const q = debouncedQuery.toLowerCase();
+  const [sections, setSections] = useState<ResultSection[]>([]);
 
-    const people: SearchResult[] = mockUsers
-      .filter((u) => {
-        const fullName = `${u.firstName}${u.lastName ? ` ${u.lastName}` : ''}`.toLowerCase();
-        return fullName.includes(q) || (u.username ?? '').toLowerCase().includes(q);
-      })
-      .map((u) => ({ kind: 'people' as const, user: u }));
-
-    const chats: SearchResult[] = mockChats
-      .filter((c) => c.name.toLowerCase().includes(q))
-      .map((c) => ({ kind: 'chat' as const, chat: c }));
-
-    const allMessages = [...mockPrivateChatMessages, ...mockGroupMessages];
-    const messages: SearchResult[] = allMessages
-      .filter((m) => m.type === 'text' && (m.text ?? '').toLowerCase().includes(q))
-      .map((m) => {
-        const parentChat = mockChats.find((c) => c.id === m.chatId);
-        return {
+  useEffect(() => {
+    if (debouncedQuery.length < 2) {
+      setSections([]);
+      return;
+    }
+    let cancelled = false;
+    // Telegram qidiruvi: chatlar/kanallar (lokal + ommaviy) va xabarlar.
+    Promise.all([searchChats(debouncedQuery), searchMessages(debouncedQuery)]).then(
+      ([foundChats, foundMessages]) => {
+        if (cancelled) return;
+        const people: SearchResult[] = foundChats
+          .filter((c) => c.type === 'private' && c.otherUser)
+          .map((c) => ({ kind: 'people' as const, user: c.otherUser! }));
+        const chatResults: SearchResult[] = foundChats
+          .filter((c) => c.type !== 'private')
+          .map((c) => ({ kind: 'chat' as const, chat: c }));
+        const messages: SearchResult[] = foundMessages.map((m) => ({
           kind: 'message' as const,
           message: m,
-          chatName: parentChat?.name ?? 'Unknown',
-        };
-      });
-
-    const result: ResultSection[] = [];
-    if (people.length > 0) result.push({ title: 'People', data: people });
-    if (chats.length > 0) result.push({ title: 'Chats', data: chats });
-    if (messages.length > 0) result.push({ title: 'Messages', data: messages });
-    return result;
+          chatName: chatName(m.chatId) || "Noma'lum",
+        }));
+        const result: ResultSection[] = [];
+        if (people.length > 0) result.push({ title: 'Odamlar', data: people });
+        if (chatResults.length > 0) result.push({ title: 'Chatlar', data: chatResults });
+        if (messages.length > 0) result.push({ title: 'Xabarlar', data: messages });
+        setSections(result);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
   }, [debouncedQuery]);
 
   const hasQuery = query.length >= 2;

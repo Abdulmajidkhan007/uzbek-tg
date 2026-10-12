@@ -23,11 +23,11 @@ import * as Haptics from '@/utils/haptics';
 import type { StackScreenProps } from '@react-navigation/stack';
 import type { AuthStackParamList } from '@/navigation/types';
 import { useTheme } from '@/hooks/useTheme';
+import { useAuthStore } from '@/stores/auth.store';
+import { authErrorText, resendCode, sendCode } from '@/services/tdlib/auth';
 
 type Props = StackScreenProps<AuthStackParamList, 'OTP'>;
 
-const OTP_LENGTH = 5;
-const VALID_OTP = '12345';
 const RESEND_COUNTDOWN = 30;
 
 function OTPDigitBox({
@@ -75,7 +75,10 @@ function OTPDigitBox({
 const MemoizedOTPDigitBox = React.memo(OTPDigitBox);
 
 export function OTPScreen({ navigation, route }: Props): React.JSX.Element {
-  const { phone } = route.params;
+  const phone = route.params?.phone ?? '';
+  const OTP_LENGTH = useAuthStore((s) => s.codeLength);
+  const codeSentVia = useAuthStore((s) => s.codeSentVia);
+  const tdState = useAuthStore((s) => s.tdState);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -149,18 +152,17 @@ export function OTPScreen({ navigation, route }: Props): React.JSX.Element {
       setIsVerifying(true);
       setErrorMessage('');
 
-      await new Promise<void>((resolve) => setTimeout(resolve, 800));
-
-      if (code === VALID_OTP) {
+      try {
+        await sendCode(code);
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
         setIsVerifying(false);
         setIsSuccess(true);
-        await new Promise<void>((resolve) => setTimeout(resolve, 600));
-        navigation.navigate('ProfileSetup', { phone });
-      } else {
+        // Keyingi qadam (parol / ro'yxatdan o'tish / chatlar) TDLib holatidan
+        // keladi — pastdagi useEffect yo'naltiradi.
+      } catch (e) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
         setIsVerifying(false);
-        setErrorMessage('Incorrect code. Try again.');
+        setErrorMessage(authErrorText(e));
         triggerShake();
         setDigits(Array(OTP_LENGTH).fill(''));
         setFocusedIndex(0);
@@ -170,7 +172,7 @@ export function OTPScreen({ navigation, route }: Props): React.JSX.Element {
         }, 100);
       }
     },
-    [navigation, phone, triggerShake]
+    [OTP_LENGTH, triggerShake]
   );
 
   const handleDigitChange = useCallback(
@@ -229,11 +231,24 @@ export function OTPScreen({ navigation, route }: Props): React.JSX.Element {
     setErrorMessage('');
     hasVerified.current = false;
     startCountdown();
-    showToast('Code sent!');
+    resendCode().then(
+      () => showToast('Kod qayta yuborildi'),
+      (e) => showToast(authErrorText(e)),
+    );
     setTimeout(() => {
       inputRefs.current[0]?.focus();
     }, 100);
   }, [isResendActive, startCountdown, showToast]);
+
+  useEffect(() => {
+    if (tdState === 'waitPassword') navigation.replace('Password');
+    if (tdState === 'waitRegistration') navigation.replace('ProfileSetup', { phone });
+  }, [tdState, navigation, phone]);
+
+  // Kod uzunligi TDLib'dan kelgach maydonlar sonini moslash.
+  useEffect(() => {
+    setDigits(Array(OTP_LENGTH).fill(''));
+  }, [OTP_LENGTH]);
 
   const handleBack = useCallback(() => {
     navigation.goBack();
@@ -374,7 +389,10 @@ export function OTPScreen({ navigation, route }: Props): React.JSX.Element {
 
         <View style={styles.content}>
           <Text style={styles.subtitle}>
-            {"We've sent an SMS with a code to "}
+            {codeSentVia === 'Telegram'
+              ? 'Kod boshqa qurilmangizdagi Telegram ilovasiga yuborildi'
+              : `Kod ${codeSentVia || 'SMS'} orqali yuborildi`}
+            {phone ? ': ' : ''}
             <Text style={styles.phoneHighlight}>{phone}</Text>
           </Text>
 

@@ -23,7 +23,8 @@ import { useTheme } from '@/hooks/useTheme';
 import Avatar from '@/components/common/Avatar';
 import EmptyState from '@/components/common/EmptyState';
 import Divider from '@/components/ui/Divider';
-import { mockChats } from '@/data/mock';
+import { useChatStore } from '@/stores/chat.store';
+import { td } from '@/services/tdlib/client';
 import type { ChatStackParamList } from '@/navigation/types';
 import type { Chat } from '@/stores/chat.store';
 
@@ -157,11 +158,12 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  const allChats = useChatStore((s) => s.chats);
   const filteredChats = useMemo<Chat[]>(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (q.length === 0) return mockChats;
-    return mockChats.filter((c) => c.name.toLowerCase().includes(q));
-  }, [searchQuery]);
+    if (q.length === 0) return allChats;
+    return allChats.filter((c) => c.name.toLowerCase().includes(q));
+  }, [searchQuery, allChats]);
 
   const handleToggle = useCallback((chatId: string) => {
     setSelectedIds((prev) => {
@@ -179,18 +181,23 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
     navigation.goBack();
   }, [navigation]);
 
-  const handleForward = useCallback(() => {
+  const handleForward = useCallback(async () => {
     if (selectedIds.size === 0) return;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const targetNames = Array.from(selectedIds)
-      .map((id) => mockChats.find((c) => c.id === id)?.name ?? id)
-      .join(', ');
-    Alert.alert(
-      'Message Forwarded',
-      `Forwarded to: ${targetNames}`,
-      [{ text: 'OK', onPress: () => navigation.goBack() }],
-    );
-  }, [selectedIds, navigation]);
+    try {
+      for (const id of selectedIds) {
+        await td({
+          '@type': 'forwardMessages',
+          chat_id: Number(id),
+          from_chat_id: Number(sourceChatId),
+          message_ids: [Number(messageId)],
+        });
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      navigation.goBack();
+    } catch (e) {
+      Alert.alert('Uzatilmadi', e instanceof Error ? e.message : String(e));
+    }
+  }, [selectedIds, navigation, sourceChatId, messageId]);
 
   const renderItem = useCallback(
     ({ item }: { item: Chat }) => (

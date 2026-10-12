@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,8 @@ import type { StackScreenProps } from '@react-navigation/stack';
 import { useTheme } from '@/hooks/useTheme';
 import Avatar from '@/components/common/Avatar';
 import Divider from '@/components/ui/Divider';
-import { mockChats, mockUsers } from '@/data/mock';
+import { useChatStore } from '@/stores/chat.store';
+import { loadMembers, setChatMuted } from '@/services/tdlib/chats';
 import type { ChatStackParamList } from '@/navigation/types';
 import type { UserPreview } from '@/stores/chat.store';
 
@@ -211,20 +212,18 @@ export function GroupInfoScreen({ route, navigation }: Props): React.JSX.Element
   const theme = useTheme();
   const { chatId } = route.params;
 
-  const chat = useMemo(
-    () => mockChats.find((c) => c.id === chatId) ?? null,
-    [chatId],
-  );
+  const chats = useChatStore((s) => s.chats);
+  const chat = useMemo(() => chats.find((c) => c.id === chatId) ?? null, [chats, chatId]);
 
   const [isMuted, setIsMuted] = useState(chat?.isMuted ?? false);
 
-  // Build mock member list from mockUsers (use first N users based on memberCount)
-  const members = useMemo<UserPreview[]>(() => {
-    const count = chat?.memberCount ?? 4;
-    return mockUsers.slice(0, Math.min(count, mockUsers.length));
-  }, [chat]);
+  const [members, setMembers] = useState<UserPreview[]>([]);
+  useEffect(() => {
+    loadMembers(chatId).then(setMembers).catch(() => setMembers([]));
+  }, [chatId]);
 
-  const isAdmin = true; // current user is always admin in this mock
+  // Admin huquqlari hali tekshirilmaydi — tahrirlash tugmalari ko'rsatilmaydi.
+  const isAdmin = false;
 
   const handleBack = useCallback(() => {
     navigation.goBack();
@@ -237,8 +236,11 @@ export function GroupInfoScreen({ route, navigation }: Props): React.JSX.Element
 
   const handleMute = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsMuted((prev) => !prev);
-  }, []);
+    setIsMuted((prev) => {
+      void setChatMuted(chatId, !prev);
+      return !prev;
+    });
+  }, [chatId]);
 
   const handleSearch = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

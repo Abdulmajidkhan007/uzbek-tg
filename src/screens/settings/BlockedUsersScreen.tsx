@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,7 @@ import Avatar from '@/components/common/Avatar';
 import EmptyState from '@/components/common/EmptyState';
 import Divider from '@/components/ui/Divider';
 import type { SettingsStackParamList } from '@/types';
-import { mockUsers } from '@/data/mock/users.mock';
+import { loadBlockedUsers, setUserBlocked } from '@/services/tdlib/chats';
 import type { UserPreview } from '@/stores/chat.store';
 
 // ---------------------------------------------------------------------------
@@ -28,10 +28,7 @@ type Props = StackScreenProps<SettingsStackParamList, 'BlockedUsers'>;
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const INITIAL_BLOCKED: UserPreview[] = [
-  mockUsers[1] as UserPreview,
-  mockUsers[4] as UserPreview,
-];
+
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -141,10 +138,15 @@ export function BlockedUsersScreen({ navigation }: Props): React.JSX.Element {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
-  const [blockedUsers, setBlockedUsers] = useState<UserPreview[]>(INITIAL_BLOCKED);
+  const [blockedUsers, setBlockedUsers] = useState<UserPreview[]>([]);
+
+  useEffect(() => {
+    loadBlockedUsers().then(setBlockedUsers).catch(() => setBlockedUsers([]));
+  }, []);
 
   const handleUnblock = useCallback((userId: string) => {
     setBlockedUsers((prev) => prev.filter((u) => u.id !== userId));
+    void setUserBlocked(userId, false);
   }, []);
 
   const renderItem = useCallback(

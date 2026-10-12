@@ -11,10 +11,12 @@ import {
   ScrollView,
   ActivityIndicator,
   Pressable,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import * as Haptics from '@/utils/haptics';
+import { authErrorText, sendPhoneNumber } from '@/services/tdlib/auth';
 import type { StackScreenProps } from '@react-navigation/stack';
 import type { AuthStackParamList } from '@/navigation/types';
 import { useTheme } from '@/hooks/useTheme';
@@ -73,10 +75,15 @@ export function LoginScreen({ navigation }: Props): React.JSX.Element {
     if (!isNextEnabled) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsLoading(true);
-    const fullPhone = `${selectedCountry.dialCode}${phoneNumber.trim()}`;
-    await new Promise<void>((resolve) => setTimeout(resolve, 1500));
-    setIsLoading(false);
-    navigation.navigate('OTP', { phone: fullPhone });
+    const fullPhone = `${selectedCountry.dialCode}${phoneNumber.replace(/\D/g, '')}`;
+    try {
+      await sendPhoneNumber(fullPhone);
+      navigation.navigate('OTP', { phone: fullPhone });
+    } catch (e) {
+      Alert.alert('Kod yuborilmadi', authErrorText(e));
+    } finally {
+      setIsLoading(false);
+    }
   }, [isNextEnabled, selectedCountry, phoneNumber, navigation]);
 
   const styles = StyleSheet.create({

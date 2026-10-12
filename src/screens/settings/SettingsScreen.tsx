@@ -16,6 +16,7 @@ import type { StackScreenProps } from '@react-navigation/stack';
 
 import { useTheme } from '@/hooks/useTheme';
 import { useAuthStore } from '@/stores/auth.store';
+import { td } from '@/services/tdlib/client';
 import { useUIStore } from '@/stores/ui.store';
 import Avatar from '@/components/common/Avatar';
 import PressableRow from '@/components/ui/PressableRow';
@@ -225,14 +226,24 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
       'Clear Cache',
-      'This will clear 128 MB of cached data. Continue?',
+      "Yuklab olingan media fayllar o'chiriladi (xabarlar qoladi). Davom etilsinmi?",
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Clear',
           style: 'destructive',
           onPress: () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            td({
+              '@type': 'optimizeStorage',
+              size: 0,
+              ttl: 0,
+              count: 0,
+              immunity_delay: 0,
+              return_deleted_file_statistics: false,
+              chat_limit: 0,
+            })
+              .then(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success))
+              .catch(() => undefined);
           },
         },
       ]
@@ -284,7 +295,6 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
         {
           icon: 'ban-outline',
           label: 'Blocked Users',
-          subtitle: '2 users',
           rightType: 'chevron',
           onPress: () => navigation.navigate('BlockedUsers'),
         },
@@ -298,7 +308,6 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
         {
           icon: 'phone-portrait-outline',
           label: 'Active Sessions',
-          subtitle: '1 device',
           rightType: 'chevron',
           onPress: () => {},
         },
@@ -366,7 +375,6 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
         {
           icon: 'trash-outline',
           label: 'Clear Cache',
-          subtitle: '128 MB',
           rightType: 'chevron',
           onPress: handleClearCache,
         },

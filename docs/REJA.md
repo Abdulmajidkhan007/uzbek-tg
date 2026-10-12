@@ -1,14 +1,13 @@
 # uzbek-tg — reja
 
-> Oxirgi yangilanish: 2026-10-11 (0-faza kodi yozildi)
+> Oxirgi yangilanish: 2026-10-12 (0-faza tasdiqlandi; 1-faza kodi yozildi)
 
 ## Hozirgi holat (koddan)
 - **Bare React Native CLI 0.85.3** (New Architecture, Hermes), Expo olib
   tashlandi. `android/` — KidsWear namunasidan: `org.uzbektg.app`,
   crash ekrani (`CrashActivity`, alohida `:crash` jarayonda).
-- Ekranlar (Pulse UI): login → SMS kod → profil → chatlar, guruhlar,
-  kanallar, sozlamalar. **Backend yo'q:** hamma ma'lumot `src/data/mock` dan;
-  SMS kod doim `12345`.
+- Ekranlar (Pulse UI) endi **TDLib**'ga ulangan (1-faza, quyida). Mock faqat
+  `TopicDetailScreen`da qoldi (forum topic'lar hali yo'q, ekranga yo'l ham yo'q).
 - CI: `.github/workflows/apk-release.yml` — `main` ga push'da APK yig'ib,
   GitHub Release'ga `uzbek-tg.apk` qo'yadi (versionCode = run raqami).
   Havola: `releases/latest/download/uzbek-tg.apk`.
@@ -32,6 +31,44 @@
   `org.uzbektg.app`, ichida JS bundle, `Ionicons.ttf`, hermes/reanimated/
   worklets `.so`. **Telefonda/emulatorda ochilishi hali tasdiqlanmagan**
   (sandbox'da KVM yo'q) — birinchi CI APK'ni egasi o'rnatib ko'rishi kerak.
+- **2026-10-12: egasi `apk-1` ni telefonda ochdi, mock ekranlar ishladi — 0-faza
+  tayyor.** (Birinchi yuklab olish buzilgan edi: `INSTALL_PARSE_FAILED_NO_CERTIFICATES`,
+  qayta yuklab olinganda o'rnatildi.)
+
+### 1-faza: TDLib (kod yozildi, telefonda hali sinalmagan)
+- TDLib 1.8.68 (`android/tdlib.env` dagi commit), **JSONJava** interfeysi:
+  `libtdjsonjava.so` + `org.drinkless.tdlib.JsonClient` (Boost litsenziyasi).
+  - Yig'ish: `scripts/build-tdlib-android.sh` (TDLib'ning `example/android`
+    skriptlari, NDK 27, API 24, arm64-v8a + armeabi-v7a).
+  - CI: `.github/workflows/tdlib-android.yml` — faqat `tdlib.env` o'zgarganda
+    yig'ib, `tdlib-<versiya>-<commit7>` release'ga `tdlib-android.zip` qo'yadi
+    (`--latest=false`, APK havolasi buzilmaydi).
+  - APK workflow'i `scripts/fetch-tdlib.sh` bilan shu release'dan oladi; release
+    hali bo'lmasa APK chiqarmaydi va TDLib tugagach (`workflow_run`) qayta ishlaydi.
+- Native modul: `android/.../tdlib/TdlibModule.kt` — `start/send/execute`,
+  javob va update'lar `tdlib` event'i (JSON matn). `setTdlibParameters` shu
+  yerda yuboriladi: `api_id`/`api_hash` **BuildConfig'dan**, JS'ga chiqmaydi.
+- Kalitlar: `TG_API_ID`, `TG_API_HASH` — GitHub repository secret'lari →
+  build vaqtida env → `BuildConfig`. Berilmasa ilova "Ulanib bo'lmadi" ekranini
+  ko'rsatadi. **Eslatma:** kalit APK ichiga yoziladi, APK'ni decompile qilgan odam
+  uni ko'rishi mumkin (barcha Telegram mijozlarida shunday) — APK'ni ommaga
+  tarqatmaslik kerak.
+- JS: `src/services/tdlib/` — `client.ts` (so'rov/javob `@extra` bilan),
+  `auth.ts` (telefon → kod → 2FA parol → ro'yxatdan o'tish → `ready`),
+  `chats.ts` (chatlar ro'yxati update'lardan, tarix, matn yuborish, reaksiya,
+  pin, o'chirish, uzatish, kontaktlar, qidiruv, a'zolar, bloklash, mute),
+  `files.ts` (avatarlarni yuklab olish).
+- Ulangan ekranlar: Login, OTP (kod uzunligi TDLib'dan), Password (yangi),
+  ProfileSetup (`registerUser`), ChatList, ChatDetail, Forward, Contacts,
+  Search, Profile, GroupInfo, ChannelInfo, BlockedUsers, EditProfile, Settings
+  (chiqish, kesh tozalash).
+- Hali yo'q (2-faza): media ko'rsatish/yuborish (rasm/video/ovoz xabarlarda
+  hozircha "📷 Rasm" kabi matn), "yozmoqda" ko'rsatkichi, javob (reply) preview,
+  push bildirishnomalar. "O'qildi" faqat chat ochilganda `markRead` orqali
+  yuboriladi (ghost mode shu nuqtaga ulanadi).
+- Sandbox'da tekshirilgan: TDLib arm64 lokal yig'ildi; `tsc` toza; JS bundle
+  yig'iladi; barcha TDLib so'rov/maydon nomlari 1.8.68 `td_api.tl` bilan
+  solishtirildi.
 
 ## Maqsad
 Telegram mijozi: haqiqiy akkaunt bilan kirish, chatlar, xabarlar, media;

@@ -1,9 +1,11 @@
 # Android APK → GitHub Release, telefondan o'rnatish uchun:
 #   https://github.com/Abdulmajidkhan007/uzbek-tg/releases/latest/download/uzbek-tg.apk
 #
-# 0-faza: ilova mock ma'lumot bilan ishlaydi, hech qanday kalit kerak emas.
-# 1-fazada TG_API_ID / TG_API_HASH secret'lari shu yerda BuildConfig'ga
-# beriladi (repoga yozilmaydi).
+# Telegram: TG_API_ID / TG_API_HASH repository secret'laridan BuildConfig'ga
+# beriladi (repoga, logga yozilmaydi). Berilmasa APK yig'iladi, lekin ilova
+# "kalit yo'q" ekranini ko'rsatadi.
+# TDLib (libtdjsonjava.so) "TDLib Android" workflow'i yig'gan release'dan olinadi;
+# u hali tayyor bo'lmasa bu run APK chiqarmaydi va TDLib tugagach o'zi qayta ishlaydi.
 #
 # Imzo: android/keystore.properties repoda yo'q, shuning uchun release build
 # debug kalit bilan imzolanadi — telefonga o'rnatish uchun yetarli, Play
@@ -12,6 +14,9 @@ name: APK Release
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ['TDLib Android']
+    types: [completed]
   push:
     branches: [main]
     paths:
@@ -24,6 +29,7 @@ on:
       - 'package-lock.json'
       - 'babel.config.js'
       - 'metro.config.js'
+      - 'scripts/fetch-tdlib.sh'
       - '.github/workflows/apk-release.yml'
 
 permissions:
@@ -35,33 +41,56 @@ concurrency:
 
 jobs:
   apk:
+    # workflow_run: faqat TDLib muvaffaqiyatli yig'ilgan bo'lsa.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
+      - name: TDLib (release'dan)
+        id: tdlib
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if scripts/fetch-tdlib.sh; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::TDLib release hali yo'q — 'TDLib Android' workflow'i tugagach APK avtomatik yig'iladi."
+          fi
+
       - uses: actions/setup-node@v4
+        if: steps.tdlib.outputs.ok == 'true'
         with:
           node-version: 22
           cache: npm
 
       - run: npm ci
+        if: steps.tdlib.outputs.ok == 'true'
 
       - name: Typecheck
+        if: steps.tdlib.outputs.ok == 'true'
         run: npx tsc --noEmit
 
       - uses: actions/setup-java@v4
+        if: steps.tdlib.outputs.ok == 'true'
         with:
           distribution: temurin
           java-version: 17
           cache: gradle
 
       - name: Build release APK
+        if: steps.tdlib.outputs.ok == 'true'
         env:
           APP_VERSION_CODE: ${{ github.run_number }}
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
         working-directory: android
         run: |
           chmod +x gradlew
+          if [ -z "$TG_API_ID" ] || [ -z "$TG_API_HASH" ]; then
+            echo "::warning::TG_API_ID / TG_API_HASH secret'lari yo'q — APK Telegram'ga ulanmaydi."
+          fi
           # Xato bo'lsa "What went wrong" bloki annotation bo'ladi — run
           # sahifasidan (telefondan ham) log yuklamasdan o'qiladi.
           set -o pipefail
@@ -75,6 +104,7 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/uzbek-tg.apk"
 
       - name: Publish GitHub Release
+        if: steps.tdlib.outputs.ok == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -88,7 +118,7 @@ jobs:
                 --repo "$GITHUB_REPOSITORY" \
                 --target "$GITHUB_SHA" \
                 --title "Uzbek TG APK #${{ github.run_number }} ($SHA)" \
-                --notes "Android APK, commit $SHA. Mock ma'lumot (0-faza). Debug kalit bilan imzolangan — telefonga o'rnatish uchun, Play Store uchun emas." \
+                --notes "Android APK, commit $SHA. Telegram (TDLib). Debug kalit bilan imzolangan — telefonga o'rnatish uchun, Play Store uchun emas." \
                 --latest 2> "$RUNNER_TEMP/gh.err" || true
             fi
             if gh release upload "$TAG" "$RUNNER_TEMP/uzbek-tg.apk" --clobber --repo "$GITHUB_REPOSITORY" 2>> "$RUNNER_TEMP/gh.err"; then
