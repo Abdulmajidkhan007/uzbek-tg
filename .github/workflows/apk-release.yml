@@ -79,6 +79,26 @@ jobs:
           java-version: 17
           cache: gradle
 
+      - name: Release imzo kaliti
+        if: steps.tdlib.outputs.ok == 'true'
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ]; then
+            echo "::warning::ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD yo'q — APK debug kalit bilan imzolanadi (tarqatish uchun emas)."
+            exit 0
+          fi
+          umask 077
+          printf '%s' "$KS_B64" | base64 -d > android/release.jks
+          # Parol noto'g'ri bo'lsa shu yerning o'zida aniq xato bilan to'xtash.
+          if ! keytool -list -keystore android/release.jks -storepass "$KS_PASS" -alias uzbektg > /dev/null 2>&1; then
+            echo "::error::Release kalitini ochib bo'lmadi: ANDROID_KEYSTORE_BASE64 yoki ANDROID_KEYSTORE_PASSWORD noto'g'ri."
+            exit 1
+          fi
+          printf 'storeFile=release.jks\nstorePassword=%s\nkeyAlias=uzbektg\nkeyPassword=%s\n' "$KS_PASS" "$KS_PASS" > android/keystore.properties
+          echo "SIGNING=release" >> "$GITHUB_ENV"
+
       - name: Build release APK
         if: steps.tdlib.outputs.ok == 'true'
         env:
@@ -118,7 +138,7 @@ jobs:
                 --repo "$GITHUB_REPOSITORY" \
                 --target "$GITHUB_SHA" \
                 --title "Uzbek TG APK #${{ github.run_number }} ($SHA)" \
-                --notes "Android APK, commit $SHA. Telegram (TDLib). Debug kalit bilan imzolangan — telefonga o'rnatish uchun, Play Store uchun emas." \
+                --notes "Android APK, commit $SHA. Telegram (TDLib). Imzo: ${SIGNING:-debug}." \
                 --latest 2> "$RUNNER_TEMP/gh.err" || true
             fi
             if gh release upload "$TAG" "$RUNNER_TEMP/uzbek-tg.apk" --clobber --repo "$GITHUB_REPOSITORY" 2>> "$RUNNER_TEMP/gh.err"; then
@@ -130,3 +150,7 @@ jobs:
           msg=$(tail -5 "$RUNNER_TEMP/gh.err" | tr '\n' ' ')
           echo "::error title=Release upload failed::$msg"
           exit 1
+
+      - name: Kalitni o'chirish
+        if: always()
+        run: rm -f android/release.jks android/keystore.properties
