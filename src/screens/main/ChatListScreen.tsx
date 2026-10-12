@@ -30,8 +30,7 @@ import type { StackScreenProps } from '@react-navigation/stack';
 
 import { useTheme } from '@/hooks/useTheme';
 import { useChatStore } from '@/stores/chat.store';
-import { useAuthStore } from '@/stores/auth.store';
-import { ChatService } from '@/services/mock/chat.service';
+import { loadMoreChats } from '@/services/tdlib/chats';
 import type { Chat } from '@/stores/chat.store';
 import type { ChatStackParamList } from '@/navigation/types';
 
@@ -116,10 +115,8 @@ const FilterChipItem = React.memo(function FilterChipItem({
 export function ChatListScreen({ navigation }: Props) {
   const theme = useTheme();
 
-  const { chats, setChats } = useChatStore();
-  const currentUser = useAuthStore((s) => s.currentUser);
+  const chats = useChatStore((s) => s.chats);
 
-  const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -135,33 +132,22 @@ export function ChatListScreen({ navigation }: Props) {
   // ---------------------------------------------------------------------------
   // Data loading
   // ---------------------------------------------------------------------------
-  const loadChats = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const fetched = await ChatService.getChats();
-      setChats(fetched);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [setChats]);
-
-  useEffect(() => {
-    if (chats.length === 0) {
-      loadChats();
-    }
-    // Only run on mount — loadChats is stable via useCallback
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Chatlar TDLib update'laridan useChatStore'ga keladi (services/tdlib/chats.ts).
+  // Bu yerda faqat ro'yxatni davom ettirish va pull-to-refresh.
+  const isLoading = useChatStore((s) => s.isLoadingChats);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      const fetched = await ChatService.getChats();
-      setChats(fetched);
+      await loadMoreChats();
     } finally {
       setIsRefreshing(false);
     }
-  }, [setChats]);
+  }, []);
+
+  const handleEndReached = useCallback(() => {
+    void loadMoreChats();
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Search toggle
@@ -261,10 +247,10 @@ export function ChatListScreen({ navigation }: Props) {
         chat={item}
         onPress={handleChatPress}
         onLongPress={handleChatLongPress}
-        currentUserId={currentUser?.id ?? 'me'}
+        currentUserId="me"
       />
     ),
-    [handleChatPress, handleChatLongPress, currentUser]
+    [handleChatPress, handleChatLongPress]
   );
 
   const keyExtractor = useCallback((item: Chat) => item.id, []);
@@ -440,6 +426,8 @@ export function ChatListScreen({ navigation }: Props) {
         renderItem={renderItem}
         ListHeaderComponent={renderListHeader}
         ListEmptyComponent={renderEmpty}
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={0.5}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}

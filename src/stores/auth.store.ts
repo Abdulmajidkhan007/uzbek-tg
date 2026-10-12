@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { TdAuthState } from '@/services/tdlib/types';
 
 export interface AuthUser {
   id: string;
@@ -13,45 +13,51 @@ export interface AuthUser {
 }
 
 interface AuthState {
+  /** TDLib authorizationState (qisqartirilgan). Haqiqat manbai — TDLib. */
+  tdState: TdAuthState;
+  /** TDLib ishga tushmasa: 'NO_API_KEYS' yoki xato matni. */
+  startError: string | null;
+  /** Kutilayotgan kod uzunligi va qayerga yuborilgani (authorizationStateWaitCode). */
+  codeLength: number;
+  codeSentVia: string;
+  passwordHint: string;
   currentUser: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
   setCurrentUser: (user: AuthUser) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 }
 
-const AUTH_USER_KEY = '@pulse/current_user';
-
 export const useAuthStore = create<AuthState>((set) => ({
+  tdState: 'loading',
+  startError: null,
+  codeLength: 5,
+  codeSentVia: '',
+  passwordHint: '',
   currentUser: null,
   isAuthenticated: false,
   isLoading: true,
   error: null,
 
-  setCurrentUser: async (user) => {
-    set({ currentUser: user, isAuthenticated: true, error: null });
-    await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-  },
+  setCurrentUser: (user) => set({ currentUser: user }),
 
   logout: async () => {
-    set({ currentUser: null, isAuthenticated: false });
-    await AsyncStorage.removeItem(AUTH_USER_KEY);
+    const { logOut } = await import('@/services/tdlib/auth');
+    await logOut();
   },
 
   setLoading: (loading) => set({ isLoading: loading }),
   setError: (error) => set({ error }),
 }));
 
+/** TDLib'ni ishga tushiradi va avtorizatsiya holati aniqlanguncha kutadi. */
 export async function initAuthStore(): Promise<void> {
+  const { startAuth } = await import('@/services/tdlib/auth');
   try {
-    const stored = await AsyncStorage.getItem(AUTH_USER_KEY);
-    if (stored) {
-      const user = JSON.parse(stored) as AuthUser;
-      useAuthStore.setState({ currentUser: user, isAuthenticated: true });
-    }
+    await startAuth();
   } finally {
     useAuthStore.setState({ isLoading: false });
   }

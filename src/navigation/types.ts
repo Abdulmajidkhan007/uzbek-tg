@@ -10,8 +10,9 @@ export type RootStackParamList = {
 export type AuthStackParamList = {
   Welcome: undefined;
   Login: undefined;
-  OTP: { phone: string };
-  ProfileSetup: { phone: string };
+  OTP: { phone?: string };
+  Password: undefined;
+  ProfileSetup: { phone?: string };
 };
 
 export type MainTabParamList = {

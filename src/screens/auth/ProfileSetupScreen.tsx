@@ -10,6 +10,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Image,
+  Alert,
 } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,23 +20,16 @@ import { launchImageLibrary } from 'react-native-image-picker';
 import type { StackScreenProps } from '@react-navigation/stack';
 import type { AuthStackParamList } from '@/navigation/types';
 import { useTheme } from '@/hooks/useTheme';
-import { useAuthStore } from '@/stores/auth.store';
-import type { AuthUser } from '@/stores/auth.store';
+import { authErrorText, registerUser } from '@/services/tdlib/auth';
 
 type Props = StackScreenProps<AuthStackParamList, 'ProfileSetup'>;
 
 const USERNAME_REGEX = /^[a-zA-Z0-9_]*$/;
 const BIO_MAX_LENGTH = 70;
 
-function generateUserId(): string {
-  return `user_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-}
-
-export function ProfileSetupScreen({ route }: Props): React.JSX.Element {
-  const { phone } = route.params;
+export function ProfileSetupScreen(_props: Props): React.JSX.Element {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const setCurrentUser = useAuthStore((s) => s.setCurrentUser);
 
   const [avatarUri, setAvatarUri] = useState<string>('');
   const [firstName, setFirstName] = useState<string>('');
@@ -82,38 +76,16 @@ export function ProfileSetupScreen({ route }: Props): React.JSX.Element {
     if (!isSubmitEnabled) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsSubmitting(true);
-
-    const newUser: AuthUser = {
-      id: generateUserId(),
-      phone,
-      firstName: firstName.trim(),
-      lastName: lastName.trim() || undefined,
-      username: username.trim() || undefined,
-      bio: bio.trim() || undefined,
-      avatarUrl: avatarUri || undefined,
-      isVerified: false,
-    };
-
-    await setCurrentUser(newUser);
-
-    // Seed the chat store with mock data after auth is set
-    // Dynamic import prevents circular dependency
-    const { mockChats } = await import('@/data/mock');
-    const { useChatStore } = await import('@/stores/chat.store');
-    useChatStore.getState().setChats(mockChats);
-
-    setIsSubmitting(false);
-    // RootNavigator automatically switches to Main when isAuthenticated becomes true
-  }, [
-    isSubmitEnabled,
-    phone,
-    firstName,
-    lastName,
-    username,
-    bio,
-    avatarUri,
-    setCurrentUser,
-  ]);
+    try {
+      // Yangi Telegram akkaunti: faqat ism/familiya kerak. Username, bio va
+      // rasm kirgandan keyin Sozlamalar'dan o'zgartiriladi.
+      await registerUser(firstName.trim(), lastName.trim());
+      // TDLib "ready" bo'lgach RootNavigator chatlarga o'tkazadi.
+    } catch (e) {
+      Alert.alert("Ro'yxatdan o'tib bo'lmadi", authErrorText(e));
+      setIsSubmitting(false);
+    }
+  }, [isSubmitEnabled, firstName, lastName]);
 
   const styles = StyleSheet.create({
     flex: { flex: 1 },

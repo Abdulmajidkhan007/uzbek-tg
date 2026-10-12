@@ -12,3 +12,6 @@ app/build/
 local.properties
 .cxx/
 .kotlin/
+
+# TDLib native kutubxonasi CI release'dan yuklanadi (scripts/fetch-tdlib.sh)
+app/src/main/jniLibs/

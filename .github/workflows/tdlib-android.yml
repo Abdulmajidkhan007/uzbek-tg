@@ -1,0 +1,89 @@
+# TDLib'ni (JSON + Java wrapper: org.drinkless.tdlib.JsonClient) Android uchun
+# yig'ib, GitHub Release'ga tdlib-android.zip qilib qo'yadi. Bu uzoq (~40-60 daq)
+# bo'lgani uchun APK workflow'idan alohida: faqat android/tdlib.env o'zgarganda
+# ishlaydi, APK esa tayyor release'dan oladi.
+name: TDLib Android
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'android/tdlib.env'
+      - 'scripts/build-tdlib-android.sh'
+      - '.github/workflows/tdlib-android.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tdlib-android
+  cancel-in-progress: false
+
+jobs:
+  tdlib:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      NDK_VERSION: 27.1.12297006
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versiya
+        id: v
+        run: |
+          source android/tdlib.env
+          TAG="tdlib-${TDLIB_VERSION}-${TDLIB_COMMIT:0:7}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "commit=$TDLIB_COMMIT" >> "$GITHUB_OUTPUT"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$TAG allaqachon bor — qayta yig'ilmaydi."
+          fi
+
+      - uses: actions/setup-java@v4
+        if: steps.v.outputs.exists != 'true'
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Asboblar (gperf, php, NDK, CMake)
+        if: steps.v.outputs.exists != 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gperf php-cli
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" "cmake;3.22.1" > /dev/null
+
+      - name: TDLib manbasi
+        if: steps.v.outputs.exists != 'true'
+        run: |
+          git init -q "$RUNNER_TEMP/td"
+          cd "$RUNNER_TEMP/td"
+          git remote add origin https://github.com/tdlib/td.git
+          git fetch -q --depth 1 origin "${{ steps.v.outputs.commit }}"
+          git checkout -q FETCH_HEAD
+
+      - name: Yig'ish (arm64-v8a, armeabi-v7a)
+        if: steps.v.outputs.exists != 'true'
+        run: |
+          set -o pipefail
+          if ! scripts/build-tdlib-android.sh "$RUNNER_TEMP/td" "$ANDROID_HOME" "$RUNNER_TEMP/out" "arm64-v8a armeabi-v7a" 2>&1 | tee "$RUNNER_TEMP/build.log"; then
+            msg=$(tail -40 "$RUNNER_TEMP/build.log")
+            msg=${msg//'%'/'%25'}; msg=${msg//$'\r'/}; msg=${msg//$'\n'/'%0A'}
+            echo "::error title=TDLib build failed::$msg"
+            exit 1
+          fi
+          cd "$RUNNER_TEMP/out" && zip -qr "$RUNNER_TEMP/tdlib-android.zip" libs java
+
+      - name: Release
+        if: steps.v.outputs.exists != 'true'
+        run: |
+          TAG="${{ steps.v.outputs.tag }}"
+          gh release create "$TAG" "$RUNNER_TEMP/tdlib-android.zip" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "TDLib $TAG (Android)" \
+            --notes "TDLib ${{ steps.v.outputs.commit }} — libtdjsonjava.so (arm64-v8a, armeabi-v7a). APK workflow'i shundan foydalanadi." \
+            --latest=false

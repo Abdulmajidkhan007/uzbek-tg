@@ -25,6 +25,19 @@ def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 // `versionCode(x).toInteger()` deb o'qib, versionCode'ga String beradi.
 def appVersionCode = (System.getenv('APP_VERSION_CODE') ?: '1').toInteger()
 
+// Telegram api_id / api_hash (my.telegram.org). Repoda YO'Q: CI'da GitHub
+// secret'lardan (TG_API_ID, TG_API_HASH) env orqali, lokal build'da
+// `-PTG_API_ID=... -PTG_API_HASH=...` bilan beriladi. Berilmasa ilova ochiladi,
+// lekin Telegram'ga ulanmaydi va buni ekranda aytadi.
+def tgApiId = ((findProperty('TG_API_ID') ?: System.getenv('TG_API_ID')) ?: '0').toString().trim()
+def tgApiHash = ((findProperty('TG_API_HASH') ?: System.getenv('TG_API_HASH')) ?: '').toString().trim()
+if (!(tgApiId ==~ /\d+/)) {
+    throw new GradleException("TG_API_ID faqat raqam bo'lishi kerak")
+}
+if (!(tgApiHash ==~ /[0-9a-fA-F]*/)) {
+    throw new GradleException("TG_API_HASH faqat hex belgilar bo'lishi kerak")
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -39,6 +52,11 @@ android {
         // ustiga yangilanish sifatida o'rnatiladi.
         versionCode appVersionCode
         versionName "0.1.${appVersionCode}"
+        buildConfigField "int", "TG_API_ID", tgApiId
+        buildConfigField "String", "TG_API_HASH", "\"${tgApiHash}\""
+    }
+    buildFeatures {
+        buildConfig true
     }
     signingConfigs {
         debug {

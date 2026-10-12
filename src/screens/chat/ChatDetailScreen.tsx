@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   Modal,
   Pressable,
+  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -33,7 +34,16 @@ import type { StackScreenProps } from '@react-navigation/stack';
 import { useTheme } from '@/hooks/useTheme';
 import { useChatStore } from '@/stores/chat.store';
 import type { ChatMessage } from '@/stores/chat.store';
-import { ChatService } from '@/services/mock/chat.service';
+import {
+  closeChat,
+  deleteMessage as tdDeleteMessage,
+  loadHistory,
+  markRead,
+  openChat,
+  sendText,
+  setPinned,
+  toggleReaction,
+} from '@/services/tdlib/chats';
 import type { ChatStackParamList } from '@/navigation/types';
 
 import Avatar from '@/components/common/Avatar';
@@ -61,15 +71,6 @@ interface ContextMenuOption {
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const SIMULATED_REPLIES = [
-  'That makes total sense!',
-  'Haha, love it!',
-  'On it, give me a moment.',
-  'Absolutely, let\'s do it!',
-  'Good point, I hadn\'t thought of that.',
-];
-
-const BOT_REPLY_DELAY_MS = 2000;
 
 function getDateSeparatorLabel(date: Date): string {
   if (isToday(date)) return 'Today';
@@ -560,20 +561,18 @@ export function ChatDetailScreen({ navigation, route }: Props) {
   // Load messages on mount
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    const existing = allMessages[chatId] ?? [];
-    if (existing.length === 0) {
-      setIsLoadingMessages(true);
-      ChatService.getMessages(chatId)
-        .then((msgs) => setMessages(chatId, msgs))
-        .finally(() => setIsLoadingMessages(false));
-    }
-
     setActiveChatId(chatId);
-    ChatService.markAsRead(chatId);
+    setIsLoadingMessages(true);
+    void openChat(chatId);
+    loadHistory(chatId)
+      .then(() => markRead(chatId))
+      .catch(() => undefined)
+      .finally(() => setIsLoadingMessages(false));
     markChatAsRead(chatId);
 
     return () => {
       setActiveChatId(null);
+      void closeChat(chatId);
       if (typingTimerRef.current) {
         clearTimeout(typingTimerRef.current);
       }
@@ -588,84 +587,19 @@ export function ChatDetailScreen({ navigation, route }: Props) {
     async (text: string) => {
       const replyToId = replyingTo?.id;
       setReplyingTo(null);
-
-      const sent = await ChatService.sendMessage(chatId, text, replyToId);
-
-      // Wire up reply metadata if replying
-      const messageToAdd: ChatMessage = replyToId && replyingTo
-        ? {
-            ...sent,
-            replyTo: {
-              messageId: replyingTo.id,
-              senderId: replyingTo.senderId,
-              senderName: `${replyingTo.senderPreview.firstName}${
-                replyingTo.senderPreview.lastName
-                  ? ` ${replyingTo.senderPreview.lastName}`
-                  : ''
-              }`,
-              contentPreview:
-                replyingTo.type === 'voice'
-                  ? 'Voice message'
-                  : replyingTo.type === 'image'
-                  ? 'Photo'
-                  : replyingTo.text ?? '',
-              type: replyingTo.type,
-            },
-          }
-        : sent;
-
-      addMessage(chatId, messageToAdd);
-
-      // Simulate delivery status update
-      setTimeout(() => {
-        updateMessage(chatId, messageToAdd.id, { status: 'delivered' });
-      }, 1000);
-
-      // Simulate the other person typing then replying
-      setIsTyping(true);
-      typingTimerRef.current = setTimeout(() => {
-        setIsTyping(false);
-
-        const randomReply =
-          SIMULATED_REPLIES[Math.floor(Math.random() * SIMULATED_REPLIES.length)] ??
-          SIMULATED_REPLIES[0];
-
-        // Find the other user from the chat
-        const otherUser = chat?.otherUser ?? {
-          id: 'bot',
-          firstName: 'Bot',
-          status: 'online' as const,
-          isVerified: false,
-        };
-
-        const replyMsg: ChatMessage = {
-          id: `sim_${Date.now()}`,
-          chatId,
-          senderId: otherUser.id,
-          senderPreview: otherUser,
-          type: 'text',
-          text: randomReply,
-          status: 'sent',
-          sentAt: new Date(),
-          isDeleted: false,
-          isPinned: false,
-          replyTo: null,
-          reactions: [],
-        };
-
-        addMessage(chatId, replyMsg);
-      }, BOT_REPLY_DELAY_MS);
+      try {
+        await sendText(chatId, text, replyToId);
+      } catch (e) {
+        Alert.alert('Xabar yuborilmadi', e instanceof Error ? e.message : String(e));
+      }
     },
-    [chatId, replyingTo, setReplyingTo, addMessage, updateMessage, chat]
+    [chatId, replyingTo, setReplyingTo]
   );
 
-  const handleSendVoice = useCallback(
-    async (uri: string, duration: number, waveform: number[]) => {
-      const voiceMsg = await ChatService.sendVoice(chatId, uri, duration, waveform);
-      addMessage(chatId, voiceMsg);
-    },
-    [chatId, addMessage]
-  );
+  const handleSendVoice = useCallback(async () => {
+    // Ovozli xabar yozish 2-fazada (media) qo'shiladi.
+    Alert.alert('Tez orada', "Ovozli xabar yuborish keyingi bosqichda qo'shiladi.");
+  }, []);
 
   const handleAttachmentPress = useCallback(() => {
     // Future: open media picker
@@ -688,34 +622,10 @@ export function ChatDetailScreen({ navigation, route }: Props) {
     (emoji: string) => {
       if (!contextMenuMessage) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      ChatService.addReaction(chatId, contextMenuMessage.id, emoji);
-      // Optimistic update: toggle reaction for current user
-      const existing = contextMenuMessage.reactions.find((r) => r.emoji === emoji);
-      const updatedReactions = existing
-        ? contextMenuMessage.reactions.map((r) =>
-            r.emoji === emoji
-              ? {
-                  ...r,
-                  count: r.hasCurrentUser ? r.count - 1 : r.count + 1,
-                  userIds: r.hasCurrentUser
-                    ? r.userIds.filter((id) => id !== 'me')
-                    : ([...r.userIds, 'me'] as unknown as readonly string[]),
-                  hasCurrentUser: !r.hasCurrentUser,
-                }
-              : r
-          )
-        : [
-            ...contextMenuMessage.reactions,
-            {
-              emoji,
-              count: 1,
-              userIds: ['me'] as unknown as readonly string[],
-              hasCurrentUser: true,
-            },
-          ];
-      updateMessage(chatId, contextMenuMessage.id, { reactions: updatedReactions });
+      const chosen = contextMenuMessage.reactions.some((r) => r.emoji === emoji && r.hasCurrentUser);
+      void toggleReaction(chatId, contextMenuMessage.id, emoji, !chosen);
     },
-    [chatId, contextMenuMessage, updateMessage]
+    [chatId, contextMenuMessage]
   );
 
   const handleReplyFromMenu = useCallback(() => {
@@ -732,29 +642,20 @@ export function ChatDetailScreen({ navigation, route }: Props) {
 
   const handlePin = useCallback(() => {
     if (!contextMenuMessage) return;
-    const nowPinned = !contextMenuMessage.isPinned;
-    ChatService.pinMessage(chatId, contextMenuMessage.id);
-    updateMessage(chatId, contextMenuMessage.id, { isPinned: nowPinned });
-
-    if (nowPinned) {
-      const current = pinnedMessages[chatId] ?? [];
-      setPinnedMessages(chatId, [{ ...contextMenuMessage, isPinned: true }, ...current]);
-      setShowPinnedBar(true);
-    } else {
-      const current = pinnedMessages[chatId] ?? [];
-      setPinnedMessages(
-        chatId,
-        current.filter((m) => m.id !== contextMenuMessage.id)
-      );
-    }
-  }, [chatId, contextMenuMessage, updateMessage, pinnedMessages, setPinnedMessages]);
+    setPinned(chatId, contextMenuMessage.id, !contextMenuMessage.isPinned).catch((e: unknown) =>
+      Alert.alert('Bajarilmadi', e instanceof Error ? e.message : String(e))
+    );
+    setShowPinnedBar(true);
+  }, [chatId, contextMenuMessage]);
 
   const handleDelete = useCallback(() => {
     if (!contextMenuMessage) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    ChatService.deleteMessage(chatId, contextMenuMessage.id);
-    deleteMessage(chatId, contextMenuMessage.id);
-  }, [chatId, contextMenuMessage, deleteMessage]);
+    // O'z xabarlari hamma uchun o'chiriladi, boshqalarniki — faqat o'zida.
+    tdDeleteMessage(chatId, contextMenuMessage.id, contextMenuMessage.senderId === 'me').catch(
+      (e: unknown) => Alert.alert("O'chirilmadi", e instanceof Error ? e.message : String(e))
+    );
+  }, [chatId, contextMenuMessage]);
 
   const handleReplyPress = useCallback((_replyId: string) => {
     // Future: scroll to the replied message
@@ -763,25 +664,11 @@ export function ChatDetailScreen({ navigation, route }: Props) {
   const handleReactionPress = useCallback(
     (messageId: string, emoji: string) => {
       const msg = chatMessages.find((m) => m.id === messageId);
-      if (!msg) return;
-      const existing = msg.reactions.find((r) => r.emoji === emoji);
+      const existing = msg?.reactions.find((r) => r.emoji === emoji);
       if (!existing) return;
-
-      const updatedReactions = msg.reactions.map((r) =>
-        r.emoji === emoji
-          ? {
-              ...r,
-              count: r.hasCurrentUser ? r.count - 1 : r.count + 1,
-              userIds: r.hasCurrentUser
-                ? r.userIds.filter((id) => id !== 'me')
-                : ([...r.userIds, 'me'] as unknown as readonly string[]),
-              hasCurrentUser: !r.hasCurrentUser,
-            }
-          : r
-      );
-      updateMessage(chatId, messageId, { reactions: updatedReactions });
+      void toggleReaction(chatId, messageId, emoji, !existing.hasCurrentUser);
     },
-    [chatId, chatMessages, updateMessage]
+    [chatId, chatMessages]
   );
 
   // ---------------------------------------------------------------------------
@@ -1011,8 +898,8 @@ export function ChatDetailScreen({ navigation, route }: Props) {
             <View style={styles.emptyMessages}>
               <EmptyState
                 icon="💬"
-                title="No messages yet"
-                subtitle="Say hello and start the conversation!"
+                title={isLoadingMessages ? 'Yuklanmoqda…' : "Hali xabar yo'q"}
+                subtitle={isLoadingMessages ? '' : 'Birinchi xabarni yozing'}
               />
             </View>
           }
@@ -1097,8 +984,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   emptyMessages: {
-    // FlashList is inverted so the empty state needs to be flipped
-    transform: [{ scaleY: -1 }],
+    // FlashList 2 empty state'ni inverted qilmaydi — qo'shimcha aylantirish kerak emas.
     flex: 1,
     minHeight: 400,
   },

@@ -16,7 +16,8 @@ import type { StackScreenProps } from '@react-navigation/stack';
 import { useTheme } from '@/hooks/useTheme';
 import Avatar from '@/components/common/Avatar';
 import Divider from '@/components/ui/Divider';
-import { mockUsersMap, mockChats } from '@/data/mock';
+import { useChatStore } from '@/stores/chat.store';
+import { openPrivateChat, setUserBlocked } from '@/services/tdlib/chats';
 import type { ChatStackParamList } from '@/navigation/types';
 
 // ---------------------------------------------------------------------------
@@ -118,7 +119,11 @@ export function ProfileScreen({ route, navigation }: Props): React.JSX.Element {
   const theme = useTheme();
   const { userId } = route.params;
 
-  const user = useMemo(() => mockUsersMap[userId] ?? null, [userId]);
+  const chats = useChatStore((s) => s.chats);
+  const user = useMemo(
+    () => chats.find((c) => c.otherUser?.id === userId)?.otherUser ?? null,
+    [chats, userId],
+  );
   const [isBlocked, setIsBlocked] = useState(false);
 
   const fullName = useMemo(
@@ -138,15 +143,16 @@ export function ProfileScreen({ route, navigation }: Props): React.JSX.Element {
   const handleMessage = useCallback(() => {
     if (!user) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const chat = mockChats.find((c) => c.type === 'private' && c.otherUser?.id === user.id);
-    if (chat) {
-      navigation.navigate('ChatDetail', {
-        chatId: chat.id,
-        chatType: chat.type,
-        title: chat.name,
-        avatarUrl: chat.avatarUrl,
-      });
-    }
+    openPrivateChat(user.id)
+      .then((chat) =>
+        navigation.navigate('ChatDetail', {
+          chatId: chat.id,
+          chatType: chat.type,
+          title: chat.name,
+          avatarUrl: chat.avatarUrl,
+        }),
+      )
+      .catch(() => undefined);
   }, [user, navigation]);
 
   const handleCall = useCallback(() => {
@@ -180,6 +186,7 @@ export function ProfileScreen({ route, navigation }: Props): React.JSX.Element {
           text: 'Unblock',
           onPress: () => {
             setIsBlocked(false);
+            void setUserBlocked(userId, false);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           },
         },
@@ -192,6 +199,7 @@ export function ProfileScreen({ route, navigation }: Props): React.JSX.Element {
           style: 'destructive',
           onPress: () => {
             setIsBlocked(true);
+            void setUserBlocked(userId, true);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
           },
         },

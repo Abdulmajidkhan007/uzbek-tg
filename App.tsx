@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'react-native';
 import { RootNavigator } from '@/navigation/RootNavigator';
-import { initAuthStore } from '@/stores/auth.store';
+import { initAuthStore, useAuthStore } from '@/stores/auth.store';
 import { initUIStore } from '@/stores/ui.store';
 import { useUIStore } from '@/stores/ui.store';
 import { darkTheme, lightTheme } from '@/theme';
@@ -66,11 +66,36 @@ export default function App(): React.JSX.Element {
     );
   }
 
+  return <AppShell />;
+}
+
+function AppShell(): React.JSX.Element {
+  const startError = useAuthStore((s) => s.startError);
+  if (startError) {
+    return <StartErrorScreen error={startError} />;
+  }
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <AppContent />
       </SafeAreaProvider>
     </GestureHandlerRootView>
+  );
+}
+
+/** TDLib ishga tushmasa (kalit yo'q yoki native kutubxona yo'q) — sababni ko'rsatadi. */
+function StartErrorScreen({ error }: { error: string }): React.JSX.Element {
+  const text =
+    error === 'NO_API_KEYS'
+      ? "Bu APK Telegram API kalitlarisiz yig'ilgan (TG_API_ID / TG_API_HASH). " +
+        "GitHub → Settings → Secrets → Actions'ga qo'shib, APK'ni qayta yig'ing."
+      : `Telegram kutubxonasi ishga tushmadi:\n${error}`;
+  return (
+    <View style={{ flex: 1, backgroundColor: '#0F1923', justifyContent: 'center', padding: 24 }}>
+      <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '700', marginBottom: 12 }}>
+        Ulanib bo'lmadi
+      </Text>
+      <Text style={{ color: '#B0BEC5', fontSize: 15, lineHeight: 22 }}>{text}</Text>
+    </View>
   );
 }

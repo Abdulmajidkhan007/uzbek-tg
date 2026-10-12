@@ -17,7 +17,8 @@ import type { StackScreenProps } from '@react-navigation/stack';
 import { useTheme } from '@/hooks/useTheme';
 import Avatar from '@/components/common/Avatar';
 import Divider from '@/components/ui/Divider';
-import { mockChats, mockGroupMessages } from '@/data/mock';
+import { useChatStore } from '@/stores/chat.store';
+import { setChatJoined, setChatMuted } from '@/services/tdlib/chats';
 import type { ChatStackParamList } from '@/navigation/types';
 import type { ChatMessage } from '@/stores/chat.store';
 
@@ -139,15 +140,14 @@ export function ChannelInfoScreen({ route, navigation }: Props): React.JSX.Eleme
   const theme = useTheme();
   const { chatId } = route.params;
 
-  const chat = useMemo(
-    () => mockChats.find((c) => c.id === chatId) ?? null,
-    [chatId],
-  );
+  const chats = useChatStore((s) => s.chats);
+  const chatMessages = useChatStore((s) => s.messages[chatId]);
+  const chat = useMemo(() => chats.find((c) => c.id === chatId) ?? null, [chats, chatId]);
 
   const [isJoined, setIsJoined] = useState(true);
   const [isMuted, setIsMuted] = useState(chat?.isMuted ?? false);
 
-  const posts = useMemo(() => mockGroupMessages.slice(0, 4), []);
+  const posts = useMemo(() => (chatMessages ?? []).slice(-4).reverse(), [chatMessages]);
 
   const handleBack = useCallback(() => {
     navigation.goBack();
@@ -166,6 +166,7 @@ export function ChannelInfoScreen({ route, navigation }: Props): React.JSX.Eleme
             style: 'destructive',
             onPress: () => {
               setIsJoined(false);
+              void setChatJoined(chatId, false);
               navigation.goBack();
             },
           },
@@ -173,13 +174,17 @@ export function ChannelInfoScreen({ route, navigation }: Props): React.JSX.Eleme
       );
     } else {
       setIsJoined(true);
+      void setChatJoined(chatId, true);
     }
-  }, [isJoined, chat, navigation]);
+  }, [isJoined, chat, navigation, chatId]);
 
   const handleMute = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsMuted((prev) => !prev);
-  }, []);
+    setIsMuted((prev) => {
+      void setChatMuted(chatId, !prev);
+      return !prev;
+    });
+  }, [chatId]);
 
   const handleShare = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

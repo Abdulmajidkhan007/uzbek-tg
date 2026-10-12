@@ -18,6 +18,7 @@ import type { StackScreenProps } from '@react-navigation/stack';
 
 import { useTheme } from '@/hooks/useTheme';
 import { useAuthStore } from '@/stores/auth.store';
+import { td } from '@/services/tdlib/client';
 import Avatar from '@/components/common/Avatar';
 import type { SettingsStackParamList } from '@/navigation/types';
 
@@ -44,7 +45,6 @@ export function EditProfileScreen({ navigation }: Props): React.JSX.Element {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const currentUser = useAuthStore((s) => s.currentUser);
-  const setCurrentUser = useAuthStore((s) => s.setCurrentUser);
 
   const [form, setForm] = useState<FormState>({
     firstName: currentUser?.firstName ?? '',
@@ -109,21 +109,36 @@ export function EditProfileScreen({ navigation }: Props): React.JSX.Element {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsSaving(true);
     try {
-      await setCurrentUser({
-        ...currentUser,
-        firstName: form.firstName.trim(),
-        lastName: form.lastName.trim() !== '' ? form.lastName.trim() : undefined,
-        username: form.username.trim() !== '' ? form.username.trim() : undefined,
-        bio: form.bio.trim() !== '' ? form.bio.trim() : undefined,
-        avatarUrl: form.avatarUri !== '' ? form.avatarUri : undefined,
-      });
+      const orig = originalRef.current;
+      if (form.firstName !== orig.firstName || form.lastName !== orig.lastName) {
+        await td({ '@type': 'setName', first_name: form.firstName.trim(), last_name: form.lastName.trim() });
+      }
+      if (form.username !== orig.username) {
+        await td({ '@type': 'setUsername', username: form.username.trim() });
+      }
+      if (form.bio !== orig.bio) {
+        await td({ '@type': 'setBio', bio: form.bio.trim() });
+      }
+      if (form.avatarUri !== orig.avatarUri && form.avatarUri.startsWith('file://')) {
+        await td({
+          '@type': 'setProfilePhoto',
+          photo: {
+            '@type': 'inputChatPhotoStatic',
+            photo: { '@type': 'inputFileLocal', path: form.avatarUri.replace('file://', '') },
+          },
+          is_public: false,
+        });
+      }
+      // Yangi qiymatlar updateUser orqali useAuthStore'ga qaytadi.
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       originalRef.current = { ...form };
       navigation.goBack();
+    } catch (e) {
+      Alert.alert('Saqlanmadi', e instanceof Error ? e.message : String(e));
     } finally {
       setIsSaving(false);
     }
-  }, [canSave, isSaving, currentUser, setCurrentUser, form, navigation]);
+  }, [canSave, isSaving, currentUser, form, navigation]);
 
   const handleBack = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

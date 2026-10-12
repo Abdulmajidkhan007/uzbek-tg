@@ -1,4 +1,5 @@
 import React, {
+  useEffect,
   useCallback,
   useMemo,
   useRef,
@@ -31,8 +32,23 @@ import { useTheme } from '@/hooks/useTheme';
 import Avatar from '@/components/common/Avatar';
 import EmptyState from '@/components/common/EmptyState';
 import Divider from '@/components/ui/Divider';
-import { mockContactSections, mockChats } from '@/data/mock';
-import type { ContactSection } from '@/data/mock';
+import { loadContacts, openPrivateChat } from '@/services/tdlib/chats';
+
+interface ContactSection {
+  letter: string;
+  data: UserPreview[];
+}
+
+function toSections(list: UserPreview[]): ContactSection[] {
+  const map = new Map<string, UserPreview[]>();
+  for (const c of list) {
+    const letter = (c.firstName.charAt(0) || '#').toUpperCase();
+    map.set(letter, [...(map.get(letter) ?? []), c]);
+  }
+  return [...map.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([letter, data]) => ({ letter, data }));
+}
 import type { ChatStackParamList } from '@/navigation/types';
 import type { UserPreview } from '@/stores/chat.store';
 
@@ -204,6 +220,13 @@ export function ContactsScreen(): React.JSX.Element {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchVisible, setIsSearchVisible] = useState(false);
+  const [contactSections, setContactSections] = useState<ContactSection[]>([]);
+
+  useEffect(() => {
+    loadContacts()
+      .then((list) => setContactSections(toSections(list)))
+      .catch(() => setContactSections([]));
+  }, []);
 
   const searchBarHeight = useSharedValue(0);
   const searchBarOpacity = useSharedValue(0);
@@ -238,9 +261,9 @@ export function ContactsScreen(): React.JSX.Element {
   // Filtered sections
   // ---------------------------------------------------------------------------
   const filteredSections = useMemo<ContactSection[]>(() => {
-    if (searchQuery.trim().length === 0) return mockContactSections;
+    if (searchQuery.trim().length === 0) return contactSections;
     const q = searchQuery.toLowerCase();
-    return mockContactSections
+    return contactSections
       .map((section) => ({
         ...section,
         data: section.data.filter((c) => {
@@ -249,11 +272,11 @@ export function ContactsScreen(): React.JSX.Element {
         }),
       }))
       .filter((s) => s.data.length > 0);
-  }, [searchQuery]);
+  }, [searchQuery, contactSections]);
 
   const allLetters = useMemo(
-    () => mockContactSections.map((s) => s.letter),
-    [],
+    () => contactSections.map((s) => s.letter),
+    [contactSections],
   );
 
   // ---------------------------------------------------------------------------
@@ -262,17 +285,16 @@ export function ContactsScreen(): React.JSX.Element {
   const handleContactPress = useCallback(
     (contact: UserPreview) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const existingChat = mockChats.find(
-        (c) => c.type === 'private' && c.otherUser?.id === contact.id,
-      );
-      if (existingChat) {
-        navigation.navigate('ChatDetail', {
-          chatId: existingChat.id,
-          chatType: existingChat.type,
-          title: existingChat.name,
-          avatarUrl: existingChat.avatarUrl,
-        });
-      }
+      openPrivateChat(contact.id)
+        .then((chat) =>
+          navigation.navigate('ChatDetail', {
+            chatId: chat.id,
+            chatType: chat.type,
+            title: chat.name,
+            avatarUrl: chat.avatarUrl,
+          }),
+        )
+        .catch(() => undefined);
     },
     [navigation],
   );
