@@ -14,6 +14,9 @@ const chats = new Map<number, TdChat>();
 const users = new Map<number, TdUser>();
 /** Ochilgan chatlarning xabarlari (eskidan yangiga). */
 const history = new Map<number, TdMessage[]>();
+/** Guruh/kanal a'zolari soni: basic_group_id / supergroup_id bo'yicha. */
+const basicGroupCounts = new Map<number, number>();
+const supergroupCounts = new Map<number, number>();
 
 let unsubscribe: (() => void) | null = null;
 let unsubscribeFiles: (() => void) | null = null;
@@ -119,6 +122,145 @@ function senderOf(m: TdMessage): { id: string; preview: UserPreview } {
   };
 }
 
+type AnyFile = { id: number; size?: number; expected_size?: number; local: { path: string; is_downloading_completed: boolean } };
+type Mini = { width: number; height: number; data: string } | undefined;
+
+function miniUri(mini: Mini): string | undefined {
+  return mini?.data ? `data:image/jpeg;base64,${mini.data}` : undefined;
+}
+
+/** Fayl lokal bo'lsa uning URI'si; bo'lmasa yuklab olishni boshlaydi. */
+function fileOrRequest(file: AnyFile | undefined): string | undefined {
+  if (!file) return undefined;
+  const uri = fileUri(file);
+  if (!uri) requestFile(file);
+  return uri;
+}
+
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+function base64Bytes(b64: string): number[] {
+  const out: number[] = [];
+  let buf = 0;
+  let bits = 0;
+  for (const ch of b64) {
+    const v = B64.indexOf(ch);
+    if (v < 0) continue; // '=' va bo'shliqlar
+    buf = (buf << 6) | v;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push((buf >> bits) & 0xff);
+    }
+  }
+  return out;
+}
+
+/** TDLib voice_note.waveform: base64, har qiymat 5 bit (0..31). */
+function decodeWaveform(b64: string | undefined): number[] {
+  if (!b64) return [];
+  const bytes = base64Bytes(b64);
+  const count = Math.floor((bytes.length * 8) / 5);
+  const out: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const bit = i * 5;
+    const byte = bit >> 3;
+    const shift = bit & 7;
+    const value = ((bytes[byte] ?? 0) | ((bytes[byte + 1] ?? 0) << 8)) >> shift;
+    out.push((value & 31) / 31);
+  }
+  return out;
+}
+
+/** Xabar kontentidan media maydonlari (rasm, video, ovoz, fayl, stiker). */
+function mediaFields(m: TdMessage): Partial<ChatMessage> {
+  const c = m.content as unknown as Record<string, any>;
+  const caption = (c.caption?.text as string | undefined) || undefined;
+  switch (c['@type']) {
+    case 'messagePhoto': {
+      const sizes = (c.photo?.sizes ?? []) as { type: string; width: number; height: number; photo: AnyFile }[];
+      // Ekran uchun ~1280px dan oshmaydigan eng kattasi.
+      const best = [...sizes].filter((x) => x.width <= 1280).pop() ?? sizes[sizes.length - 1];
+      return {
+        type: 'image',
+        mediaKind: 'photo',
+        text: caption,
+        mediaUrl: fileOrRequest(best?.photo),
+        thumbUrl: miniUri(c.photo?.minithumbnail),
+        mediaWidth: best?.width,
+        mediaHeight: best?.height,
+        mediaFileId: best?.photo.id,
+      };
+    }
+    case 'messageVideo':
+    case 'messageAnimation':
+    case 'messageVideoNote': {
+      const v = c.video ?? c.animation ?? c.video_note;
+      const kind = c['@type'] === 'messageVideo' ? 'video' : c['@type'] === 'messageAnimation' ? 'gif' : 'videoNote';
+      const file = (v?.video ?? v?.animation) as AnyFile | undefined;
+      return {
+        type: 'video',
+        mediaKind: kind,
+        text: caption,
+        thumbUrl: fileOrRequest(v?.thumbnail?.file) ?? miniUri(v?.minithumbnail),
+        mediaWidth: v?.width ?? v?.length,
+        mediaHeight: v?.height ?? v?.length,
+        duration: v?.duration,
+        mediaFileId: file?.id,
+        fileSize: file?.size || file?.expected_size,
+      };
+    }
+    case 'messageVoiceNote': {
+      const vn = c.voice_note;
+      return {
+        type: 'voice',
+        text: caption,
+        duration: vn?.duration,
+        waveform: decodeWaveform(vn?.waveform),
+        mediaFileId: vn?.voice?.id,
+      };
+    }
+    case 'messageAudio': {
+      const au = c.audio;
+      return {
+        type: 'audio',
+        text: caption,
+        fileName: [au?.performer, au?.title].filter(Boolean).join(' — ') || au?.file_name || 'Audio',
+        duration: au?.duration,
+        mediaFileId: au?.audio?.id,
+        fileSize: au?.audio?.size,
+      };
+    }
+    case 'messageDocument': {
+      const d = c.document;
+      return {
+        type: 'document',
+        text: caption,
+        fileName: d?.file_name || 'Fayl',
+        fileSize: d?.document?.size || d?.document?.expected_size,
+        mediaFileId: d?.document?.id,
+        thumbUrl: miniUri(d?.minithumbnail),
+      };
+    }
+    case 'messageSticker': {
+      const st = c.sticker;
+      // Animatsiyali (tgs/webm) stikerlar uchun hozircha statik thumbnail.
+      const isStatic = st?.format?.['@type'] === 'stickerFormatWebp';
+      const uri = isStatic ? fileOrRequest(st?.sticker) : fileOrRequest(st?.thumbnail?.file);
+      if (!uri && !st?.thumbnail) return { type: 'text', text: st?.emoji ?? 'Stiker' };
+      return {
+        type: 'image',
+        mediaKind: 'sticker',
+        mediaUrl: uri,
+        mediaWidth: st?.width,
+        mediaHeight: st?.height,
+      };
+    }
+    default:
+      return {};
+  }
+}
+
 export function toChatMessage(m: TdMessage): ChatMessage {
   const chat = chats.get(m.chat_id);
   const sender = senderOf(m);
@@ -135,6 +277,8 @@ export function toChatMessage(m: TdMessage): ChatMessage {
     senderPreview: sender.preview,
     type: 'text',
     text: contentText(m),
+    previewText: contentText(m),
+    ...mediaFields(m),
     status,
     sentAt: new Date(m.date * 1000),
     editedAt: m.edit_date ? new Date(m.edit_date * 1000) : undefined,
@@ -161,6 +305,12 @@ function toChat(c: TdChat): Chat {
   if (c.type.user_id) {
     otherUser = userPreview(users.get(c.type.user_id), String(c.type.user_id));
   }
+  const t = c.type as TdChat['type'] & { basic_group_id?: number; supergroup_id?: number };
+  const count = t.basic_group_id
+    ? basicGroupCounts.get(t.basic_group_id)
+    : t.supergroup_id
+    ? supergroupCounts.get(t.supergroup_id)
+    : undefined;
   return {
     id: String(c.id),
     type,
@@ -172,6 +322,7 @@ function toChat(c: TdChat): Chat {
     isMuted: c.notification_settings.mute_for > 0,
     isArchived: false,
     otherUser,
+    memberCount: count || undefined,
     isOnline: otherUser?.status === 'online',
     updatedAt: new Date((c.last_message?.date ?? 0) * 1000),
   };
@@ -264,6 +415,22 @@ function handleUpdate(u: TdObject): void {
       const user = u.user as TdUser;
       users.set(user.id, user);
       requestFile(user.profile_photo?.small);
+      break;
+    }
+    case 'updateBasicGroup': {
+      const g = u.basic_group as { id: number; member_count: number };
+      basicGroupCounts.set(g.id, g.member_count);
+      break;
+    }
+    case 'updateSupergroup': {
+      const g = u.supergroup as { id: number; member_count: number };
+      // member_count 0 bo'lishi mumkin (to'liq ma'lumot hali yo'q) — eski qiymatni saqlaymiz.
+      if (g.member_count > 0) supergroupCounts.set(g.id, g.member_count);
+      break;
+    }
+    case 'updateSupergroupFullInfo': {
+      const info = u.supergroup_full_info as { member_count: number };
+      if (info.member_count > 0) supergroupCounts.set(u.supergroup_id as number, info.member_count);
       break;
     }
     case 'updateUserStatus': {
@@ -517,7 +684,19 @@ export async function searchChats(query: string): Promise<Chat[]> {
       chat = await td<TdChat & TdObject>({ '@type': 'getChat', chat_id: id }).catch(() => undefined);
       if (chat) chats.set(id, chat);
     }
-    if (chat) result.push(toChat(chat));
+    if (chat) {
+      const uid = chat.type.user_id;
+      const sg = (chat.type as { supergroup_id?: number }).supergroup_id;
+      if (sg && !supergroupCounts.has(sg)) {
+        const g = await td<TdObject & { member_count: number }>({ '@type': 'getSupergroup', supergroup_id: sg }).catch(() => undefined);
+        if (g?.member_count) supergroupCounts.set(sg, g.member_count);
+      }
+      if (uid && !users.has(uid)) {
+        const user = await td<TdUser & TdObject>({ '@type': 'getUser', user_id: uid }).catch(() => undefined);
+        if (user) users.set(uid, user);
+      }
+      result.push(toChat(chat));
+    }
   }
   return result;
 }

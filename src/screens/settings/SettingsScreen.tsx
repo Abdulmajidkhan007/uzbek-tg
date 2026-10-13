@@ -4,7 +4,6 @@ import {
   Text,
   ScrollView,
   Switch,
-  Alert,
   StyleSheet,
   TouchableOpacity,
   Platform,
@@ -22,6 +21,7 @@ import Avatar from '@/components/common/Avatar';
 import PressableRow from '@/components/ui/PressableRow';
 import Divider from '@/components/ui/Divider';
 import type { SettingsStackParamList } from '@/types';
+import { showAlert } from '@/components/ui/Dialog';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -204,7 +204,7 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
 
   const handleLogout = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    Alert.alert(
+    showAlert(
       'Log Out',
       'Are you sure you want to log out?',
       [
@@ -224,7 +224,7 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
 
   const handleClearCache = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert(
+    showAlert(
       'Clear Cache',
       "Yuklab olingan media fayllar o'chiriladi (xabarlar qoladi). Davom etilsinmi?",
       [

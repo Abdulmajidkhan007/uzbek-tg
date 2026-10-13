@@ -48,3 +48,21 @@ export function onFilesChanged(fn: () => void): () => void {
     listeners.delete(fn);
   };
 }
+
+/** Faylni to'liq yuklab olguncha kutadi va lokal URI qaytaradi. */
+export async function downloadFileNow(fileId: number): Promise<string> {
+  ensureListener();
+  const file = await td<TdFile & TdObject>({
+    '@type': 'downloadFile',
+    file_id: fileId,
+    priority: 32,
+    offset: 0,
+    limit: 0,
+    synchronous: true,
+  });
+  if (!file.local.is_downloading_completed || !file.local.path) {
+    throw new Error('Fayl yuklab olinmadi');
+  }
+  paths.set(file.id, file.local.path);
+  return `file://${file.local.path}`;
+}

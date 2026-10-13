@@ -1,5 +1,6 @@
 import React, {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -14,9 +15,9 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
   Share,
-  Alert,
   StatusBar,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -36,6 +37,8 @@ import {
 import type { StackScreenProps } from '@react-navigation/stack';
 
 import { useTheme } from '@/hooks/useTheme';
+import Video from 'react-native-video';
+import { downloadFileNow } from '@/services/tdlib/files';
 import type { ChatStackParamList } from '@/navigation/types';
 
 // ---------------------------------------------------------------------------
@@ -190,7 +193,23 @@ const PaginationDots = React.memo(function PaginationDots({
 // Main screen
 // ---------------------------------------------------------------------------
 export function MediaPreviewScreen({ route, navigation }: Props): React.JSX.Element {
-  const { mediaUrls, initialIndex, title } = route.params;
+  const { mediaUrls: initialUrls, initialIndex, title, fileId, kind } = route.params;
+
+  // To'liq faylni (rasm yoki video) yuklab olish; shu paytgacha oldindan ko'rinish.
+  const [localUri, setLocalUri] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  useEffect(() => {
+    if (fileId == null) return;
+    let alive = true;
+    downloadFileNow(fileId)
+      .then((uri) => alive && setLocalUri(uri))
+      .catch(() => alive && setLoadError(true));
+    return () => {
+      alive = false;
+    };
+  }, [fileId]);
+  const isVideo = kind === 'video';
+  const mediaUrls = !isVideo && localUri ? [localUri] : initialUrls;
 
   const theme = useTheme();
   const scrollRef = useRef<ScrollView>(null);
@@ -213,22 +232,6 @@ export function MediaPreviewScreen({ route, navigation }: Props): React.JSX.Elem
   const handleClose = useCallback(() => {
     navigation.goBack();
   }, [navigation]);
-
-  const handleShare = useCallback(async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const url = mediaUrls[currentIndex];
-    if (!url) return;
-    try {
-      await Share.share({ message: url, title });
-    } catch {
-      // Share dismissed
-    }
-  }, [mediaUrls, currentIndex, title]);
-
-  const handleDownload = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert('Download', 'File download started.');
-  }, []);
 
   const handleScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -264,24 +267,49 @@ export function MediaPreviewScreen({ route, navigation }: Props): React.JSX.Elem
           decelerationRate="fast"
           style={styles.pager}
         >
-          {mediaUrls.map((uri, index) => (
-            <View
-              key={`${uri}-${index}`}
-              style={styles.pageWrapper}
-            >
-              <TouchableOpacity
-                activeOpacity={1}
-                onPress={toggleHeader}
-                style={StyleSheet.absoluteFill}
-                accessibilityRole="button"
-                accessibilityLabel="Toggle controls"
-              >
-                <View style={styles.imagePage}>
-                  <ZoomableImage uri={uri} onDoubleTap={toggleHeader} />
+          {isVideo ? (
+            <View style={styles.pageWrapper}>
+              {localUri ? (
+                <Video
+                  source={{ uri: localUri }}
+                  style={StyleSheet.absoluteFill}
+                  resizeMode="contain"
+                  controls
+                  repeat={false}
+                />
+              ) : (
+                <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+                  {initialUrls[0] ? (
+                    <Image source={{ uri: initialUrls[0] }} style={StyleSheet.absoluteFill} resizeMode="contain" blurRadius={4} />
+                  ) : null}
+                  {loadError ? (
+                    <Text style={{ color: '#FFFFFF' }}>Video yuklab olinmadi</Text>
+                  ) : (
+                    <ActivityIndicator color="#FFFFFF" size="large" />
+                  )}
                 </View>
-              </TouchableOpacity>
+              )}
             </View>
-          ))}
+          ) : (
+            mediaUrls.map((uri, index) => (
+              <View
+                key={`${uri}-${index}`}
+                style={styles.pageWrapper}
+              >
+                <TouchableOpacity
+                  activeOpacity={1}
+                  onPress={toggleHeader}
+                  style={StyleSheet.absoluteFill}
+                  accessibilityRole="button"
+                  accessibilityLabel="Toggle controls"
+                >
+                  <View style={styles.imagePage}>
+                    <ZoomableImage uri={uri} onDoubleTap={toggleHeader} />
+                  </View>
+                </TouchableOpacity>
+              </View>
+            ))
+          )}
         </ScrollView>
 
         {/* Header overlay */}
@@ -331,26 +359,7 @@ export function MediaPreviewScreen({ route, navigation }: Props): React.JSX.Elem
                 )}
               </View>
 
-              <View style={styles.headerActions}>
-                <TouchableOpacity
-                  onPress={handleDownload}
-                  activeOpacity={0.7}
-                  style={[styles.headerBtn, { marginRight: theme.spacing.xs }]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Download media"
-                >
-                  <Ionicons name="download-outline" size={22} color="#FFFFFF" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleShare}
-                  activeOpacity={0.7}
-                  style={styles.headerBtn}
-                  accessibilityRole="button"
-                  accessibilityLabel="Share media"
-                >
-                  <Ionicons name="share-outline" size={22} color="#FFFFFF" />
-                </TouchableOpacity>
-              </View>
+              {/* Saqlash/ulashish keyinroq (galereyaga yozish kutubxonasi kerak). */}
             </View>
           </SafeAreaView>
         </Animated.View>

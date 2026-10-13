@@ -55,31 +55,23 @@ function buildPreview(chat: Chat, currentUserId: string | undefined): PreviewRes
 
   if (chat.isTyping) {
     const who = chat.typingUserName ?? 'Someone';
-    return { ...base, text: `${who} is typing...`, isTyping: true };
+    return { ...base, text: `${who} yozmoqda...`, isTyping: true };
   }
 
   const msg = chat.lastMessage;
   if (!msg) {
-    return { ...base, text: 'No messages yet' };
+    return { ...base, text: "Hali xabar yo'q" };
   }
 
   if (msg.isDeleted) {
-    return { ...base, text: 'Message was deleted', isDeleted: true };
-  }
-
-  if (msg.type === 'voice') {
-    return { ...base, text: 'Voice message', isVoice: true };
-  }
-
-  if (msg.type === 'image') {
-    return { ...base, text: 'Photo', isImage: true };
+    return { ...base, text: "Xabar o'chirilgan", isDeleted: true };
   }
 
   const isOwn = currentUserId != null && msg.senderId === currentUserId;
   return {
     ...base,
-    prefix: isOwn ? 'You: ' : '',
-    text: msg.text ?? '',
+    prefix: isOwn ? 'Siz: ' : '',
+    text: msg.previewText ?? msg.text ?? '',
   };
 }
 

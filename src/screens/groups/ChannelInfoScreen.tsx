@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Share,
   Image,
 } from 'react-native';
@@ -21,6 +20,7 @@ import { useChatStore } from '@/stores/chat.store';
 import { setChatJoined, setChatMuted } from '@/services/tdlib/chats';
 import type { ChatStackParamList } from '@/navigation/types';
 import type { ChatMessage } from '@/stores/chat.store';
+import { showAlert } from '@/components/ui/Dialog';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -156,7 +156,7 @@ export function ChannelInfoScreen({ route, navigation }: Props): React.JSX.Eleme
   const handleJoinToggle = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (isJoined) {
-      Alert.alert(
+      showAlert(
         'Leave Channel',
         `Leave "${chat?.name ?? 'this channel'}"?`,
         [

@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  Alert,
   Platform,
   KeyboardAvoidingView,
 } from 'react-native';
@@ -21,6 +20,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { td } from '@/services/tdlib/client';
 import Avatar from '@/components/common/Avatar';
 import type { SettingsStackParamList } from '@/navigation/types';
+import { showAlert } from '@/components/ui/Dialog';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -95,7 +95,7 @@ export function EditProfileScreen({ navigation }: Props): React.JSX.Element {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const result = await launchImageLibrary({ mediaType: 'photo', quality: 0.8, selectionLimit: 1 });
     if (result.errorCode != null) {
-      Alert.alert('Rasm tanlanmadi', result.errorMessage ?? result.errorCode);
+      showAlert('Rasm tanlanmadi', result.errorMessage ?? result.errorCode);
       return;
     }
     const uri = result.assets?.[0]?.uri;
@@ -134,7 +134,7 @@ export function EditProfileScreen({ navigation }: Props): React.JSX.Element {
       originalRef.current = { ...form };
       navigation.goBack();
     } catch (e) {
-      Alert.alert('Saqlanmadi', e instanceof Error ? e.message : String(e));
+      showAlert('Saqlanmadi', e instanceof Error ? e.message : String(e));
     } finally {
       setIsSaving(false);
     }
@@ -143,7 +143,7 @@ export function EditProfileScreen({ navigation }: Props): React.JSX.Element {
   const handleBack = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (isDirty) {
-      Alert.alert(
+      showAlert(
         'Discard Changes',
         'You have unsaved changes. Discard them?',
         [

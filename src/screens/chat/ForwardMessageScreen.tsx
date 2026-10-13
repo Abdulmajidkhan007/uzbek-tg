@@ -11,7 +11,6 @@ import {
   TouchableOpacity,
   TextInput,
   Platform,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
@@ -27,6 +26,7 @@ import { useChatStore } from '@/stores/chat.store';
 import { td } from '@/services/tdlib/client';
 import type { ChatStackParamList } from '@/navigation/types';
 import type { Chat } from '@/stores/chat.store';
+import { showAlert } from '@/components/ui/Dialog';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -195,7 +195,7 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       navigation.goBack();
     } catch (e) {
-      Alert.alert('Uzatilmadi', e instanceof Error ? e.message : String(e));
+      showAlert('Uzatilmadi', e instanceof Error ? e.message : String(e));
     }
   }, [selectedIds, navigation, sourceChatId, messageId]);
 

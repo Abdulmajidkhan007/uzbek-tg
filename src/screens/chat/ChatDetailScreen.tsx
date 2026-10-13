@@ -12,7 +12,6 @@ import {
   TouchableOpacity,
   Modal,
   Pressable,
-  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -41,6 +40,7 @@ import {
   markRead,
   openChat,
   sendText,
+  setChatMuted,
   setPinned,
   toggleReaction,
 } from '@/services/tdlib/chats';
@@ -51,6 +51,7 @@ import LoadingState from '@/components/common/LoadingState';
 import EmptyState from '@/components/common/EmptyState';
 import MessageBubble from '@/components/chat/MessageBubble';
 import MessageInput from '@/components/chat/MessageInput';
+import { showActionSheet, showAlert } from '@/components/ui/Dialog';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -590,7 +591,7 @@ export function ChatDetailScreen({ navigation, route }: Props) {
       try {
         await sendText(chatId, text, replyToId);
       } catch (e) {
-        Alert.alert('Xabar yuborilmadi', e instanceof Error ? e.message : String(e));
+        showAlert('Xabar yuborilmadi', e instanceof Error ? e.message : String(e));
       }
     },
     [chatId, replyingTo, setReplyingTo]
@@ -598,7 +599,7 @@ export function ChatDetailScreen({ navigation, route }: Props) {
 
   const handleSendVoice = useCallback(async () => {
     // Ovozli xabar yozish 2-fazada (media) qo'shiladi.
-    Alert.alert('Tez orada', "Ovozli xabar yuborish keyingi bosqichda qo'shiladi.");
+    showAlert('Tez orada', "Ovozli xabar yuborish keyingi bosqichda qo'shiladi.");
   }, []);
 
   const handleAttachmentPress = useCallback(() => {
@@ -643,7 +644,7 @@ export function ChatDetailScreen({ navigation, route }: Props) {
   const handlePin = useCallback(() => {
     if (!contextMenuMessage) return;
     setPinned(chatId, contextMenuMessage.id, !contextMenuMessage.isPinned).catch((e: unknown) =>
-      Alert.alert('Bajarilmadi', e instanceof Error ? e.message : String(e))
+      showAlert('Bajarilmadi', e instanceof Error ? e.message : String(e))
     );
     setShowPinnedBar(true);
   }, [chatId, contextMenuMessage]);
@@ -653,7 +654,7 @@ export function ChatDetailScreen({ navigation, route }: Props) {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     // O'z xabarlari hamma uchun o'chiriladi, boshqalarniki — faqat o'zida.
     tdDeleteMessage(chatId, contextMenuMessage.id, contextMenuMessage.senderId === 'me').catch(
-      (e: unknown) => Alert.alert("O'chirilmadi", e instanceof Error ? e.message : String(e))
+      (e: unknown) => showAlert("O'chirilmadi", e instanceof Error ? e.message : String(e))
     );
   }, [chatId, contextMenuMessage]);
 
@@ -688,15 +689,21 @@ export function ChatDetailScreen({ navigation, route }: Props) {
     }
   }, [chatType, chatId, chat, navigation]);
 
-  const handleVideoCall = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // Future: initiate video call
-  }, []);
-
   const handleMoreOptions = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // Future: open options sheet
-  }, []);
+    const muted = chat?.isMuted ?? false;
+    showActionSheet({
+      title: chat?.name ?? title,
+      options: [
+        {
+          text: muted ? 'Ovozni yoqish' : 'Ovozsiz qilish',
+          icon: muted ? 'notifications-outline' : 'notifications-off-outline',
+          onPress: () => void setChatMuted(chatId, !muted),
+        },
+        { text: "Ma'lumot", icon: 'information-circle-outline', onPress: () => handleHeaderPress() },
+      ],
+    });
+  }, [chat?.isMuted, chat?.name, title, chatId, handleHeaderPress]);
 
   // ---------------------------------------------------------------------------
   // Header sub-title
@@ -704,18 +711,33 @@ export function ChatDetailScreen({ navigation, route }: Props) {
   const headerSubtitle = useMemo(() => {
     if (chatType === 'group' || chatType === 'topic_group' || chatType === 'channel') {
       const count = chat?.memberCount;
-      return count != null ? `${count} members` : 'Group';
+      if (chatType === 'channel') return count != null ? `${count} obunachi` : 'Kanal';
+      return count != null ? `${count} a'zo` : 'Guruh';
     }
     const otherUser = chat?.otherUser;
     if (!otherUser) return '';
-    if (otherUser.status === 'online') return 'Online';
-    if (otherUser.status === 'recently') return 'Recently online';
-    return 'Offline';
+    if (otherUser.status === 'online') return 'onlayn';
+    if (otherUser.status === 'recently') return 'yaqinda onlayn edi';
+    return 'uzoq vaqt oldin onlayn edi';
   }, [chatType, chat]);
 
   // ---------------------------------------------------------------------------
   // Render item
   // ---------------------------------------------------------------------------
+  const handleMediaPress = useCallback(
+    (msg: ChatMessage) => {
+      const preview = msg.mediaUrl ?? msg.thumbUrl;
+      navigation.navigate('MediaPreview', {
+        mediaUrls: preview ? [preview] : [],
+        initialIndex: 0,
+        title: chat?.name ?? title,
+        fileId: msg.mediaFileId,
+        kind: msg.type === 'video' ? 'video' : 'photo',
+      });
+    },
+    [navigation, chat?.name, title]
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: ListItem }) => {
       if (item.kind === 'separator') {
@@ -732,10 +754,11 @@ export function ChatDetailScreen({ navigation, route }: Props) {
           onLongPress={handleMessageLongPress}
           onReplyPress={handleReplyPress}
           onReactionPress={handleReactionPress}
+          onMediaPress={handleMediaPress}
         />
       );
     },
-    [chatType, isOwnMessage, handleMessageLongPress, handleReplyPress, handleReactionPress]
+    [chatType, isOwnMessage, handleMessageLongPress, handleReplyPress, handleReactionPress, handleMediaPress]
   );
 
   const keyExtractor = useCallback((item: ListItem) => {
@@ -849,14 +872,6 @@ export function ChatDetailScreen({ navigation, route }: Props) {
 
         {/* Right actions */}
         <View style={styles.headerRight}>
-          <TouchableOpacity
-            onPress={handleVideoCall}
-            style={[styles.headerIconButton, { marginRight: theme.spacing.xs }]}
-            accessibilityRole="button"
-            accessibilityLabel="Video call"
-          >
-            <Ionicons name="videocam-outline" size={22} color={theme.colors.primary} />
-          </TouchableOpacity>
           <TouchableOpacity
             onPress={handleMoreOptions}
             style={styles.headerIconButton}

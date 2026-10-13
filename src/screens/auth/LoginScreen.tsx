@@ -11,7 +11,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Pressable,
-  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -20,6 +19,7 @@ import { authErrorText, sendPhoneNumber } from '@/services/tdlib/auth';
 import type { StackScreenProps } from '@react-navigation/stack';
 import type { AuthStackParamList } from '@/navigation/types';
 import { useTheme } from '@/hooks/useTheme';
+import { showAlert } from '@/components/ui/Dialog';
 
 type Props = StackScreenProps<AuthStackParamList, 'Login'>;
 
@@ -80,7 +80,7 @@ export function LoginScreen({ navigation }: Props): React.JSX.Element {
       await sendPhoneNumber(fullPhone);
       navigation.navigate('OTP', { phone: fullPhone });
     } catch (e) {
-      Alert.alert('Kod yuborilmadi', authErrorText(e));
+      showAlert('Kod yuborilmadi', authErrorText(e));
     } finally {
       setIsLoading(false);
     }

@@ -9,6 +9,13 @@ import {
   Image,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import {
+  DocumentContent,
+  PhotoContent,
+  StickerContent,
+  VideoContent,
+  VoiceContent,
+} from './MediaContent';
 import { format } from 'date-fns';
 import { useTheme } from '@/hooks/useTheme';
 import { ChatMessage, Reaction } from '@/stores/chat.store';
@@ -23,6 +30,8 @@ export interface MessageBubbleProps {
   onLongPress?: (message: ChatMessage) => void;
   onReplyPress?: (replyId: string) => void;
   onReactionPress?: (messageId: string, emoji: string) => void;
+  /** Rasm/video bosilganda (to'liq ekranda ochish). */
+  onMediaPress?: (message: ChatMessage) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -242,6 +251,7 @@ const MessageBubble = React.memo(function MessageBubble({
   onLongPress,
   onReplyPress,
   onReactionPress,
+  onMediaPress,
 }: MessageBubbleProps) {
   const theme = useTheme();
 
@@ -276,14 +286,18 @@ const MessageBubble = React.memo(function MessageBubble({
               { color: theme.colors.textTertiary },
             ]}
           >
-            Message was deleted
+            Xabar o'chirilgan
           </Text>
         </View>
       </View>
     );
   }
 
-  const bubbleBg = isOwn
+  // Stiker va dumaloq video-xabar Telegram'dagidek fonsiz chiziladi.
+  const bare = message.mediaKind === 'sticker' || message.mediaKind === 'videoNote';
+  const bubbleBg = bare
+    ? 'transparent'
+    : isOwn
     ? theme.colors.messageBubbleOutgoing
     : theme.colors.messageBubbleIncoming;
   const textColor = isOwn
@@ -310,47 +324,26 @@ const MessageBubble = React.memo(function MessageBubble({
 
   // Render message body based on type
   function renderBody() {
-    if (message.type === 'image' && message.mediaUrl) {
+    const mediaProps = { message, onPress: onMediaPress, tint: theme.colors.primary, textColor };
+    let media: React.ReactNode = null;
+    if (message.mediaKind === 'sticker') media = <StickerContent {...mediaProps} />;
+    else if (message.type === 'image') media = <PhotoContent {...mediaProps} />;
+    else if (message.type === 'video') media = <VideoContent {...mediaProps} />;
+    else if (message.type === 'voice' || message.type === 'audio') media = <VoiceContent {...mediaProps} />;
+    else if (message.type === 'document') media = <DocumentContent {...mediaProps} />;
+    if (media) {
       return (
-        <Pressable
-          accessibilityLabel="Image message, tap to view"
-          accessibilityRole="imagebutton"
-        >
-          <Image
-            source={{ uri: message.mediaUrl }}
-            style={styles.imageThumb}
-            resizeMode="cover"
-          />
-        </Pressable>
-      );
-    }
-
-    if (message.type === 'voice') {
-      const waveform = Array.isArray(message.waveform) ? message.waveform : [];
-      const durationSec = message.duration ?? 0;
-      const minutes = Math.floor(durationSec / 60);
-      const seconds = durationSec % 60;
-      const durationLabel = `${minutes}:${String(seconds).padStart(2, '0')}`;
-
-      return (
-        <View style={styles.voiceContainer}>
-          <Pressable
-            style={[styles.playButton, { backgroundColor: theme.colors.primary }]}
-            accessibilityLabel="Play voice message"
-            accessibilityRole="button"
-          >
-            <Ionicons name="play" size={16} color="#FFFFFF" />
-          </Pressable>
-          <WaveformBars waveform={waveform} />
-          <Text style={[styles.voiceDuration, { color: textColor }]}>
-            {durationLabel}
-          </Text>
+        <View>
+          {media}
+          {message.text ? <View style={{ marginTop: 6 }}>{renderText(message.text)}</View> : null}
         </View>
       );
     }
 
-    // Text (default)
-    const raw = message.text ?? '';
+    return renderText(message.text ?? '');
+  }
+
+  function renderText(raw: string) {
     const spans = parseFormattedText(raw);
 
     return (

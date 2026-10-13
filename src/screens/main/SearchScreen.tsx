@@ -194,7 +194,7 @@ const ResultRow = React.memo(function ResultRow({
     name = result.chat.name;
     subtitle =
       result.chat.type === 'group' || result.chat.type === 'channel' || result.chat.type === 'topic_group'
-        ? `${result.chat.memberCount ?? 0} members`
+        ? (result.chat.memberCount ? `${result.chat.memberCount} a'zo` : result.chat.type === 'channel' ? 'Kanal' : 'Guruh')
         : result.chat.otherUser?.username ?? '';
     avatarUri = result.chat.avatarUrl;
     avatarName = result.chat.name;

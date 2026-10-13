@@ -9,7 +9,6 @@ import {
   Modal,
   Pressable,
   StyleSheet,
-  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -19,6 +18,7 @@ import type { StackScreenProps } from '@react-navigation/stack';
 import { useTheme } from '@/hooks/useTheme';
 import Divider from '@/components/ui/Divider';
 import type { SettingsStackParamList } from '@/types';
+import { showAlert } from '@/components/ui/Dialog';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -112,7 +112,7 @@ export function PrivacySettingsScreen({ navigation }: Props): React.JSX.Element 
 
   const handleDeleteAccount = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    Alert.alert(
+    showAlert(
       'Delete Account',
       'If you delete your account, all messages and chats will be permanently lost. This action cannot be undone.',
       [
