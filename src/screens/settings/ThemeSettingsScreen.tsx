@@ -14,7 +14,7 @@ import type { StackScreenProps } from '@react-navigation/stack';
 
 import { useTheme } from '@/hooks/useTheme';
 import { useUIStore } from '@/stores/ui.store';
-import type { SettingsStackParamList } from '@/types';
+import type { SettingsStackParamList } from '@/navigation/types';
 import type { ThemeMode } from '@/theme';
 
 // ---------------------------------------------------------------------------

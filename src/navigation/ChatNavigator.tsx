@@ -1,7 +1,8 @@
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import type { ChatStackParamList } from './types';
-import { ChatListScreen } from '@/screens/main/ChatListScreen';
+import { ArchivedChatsScreen, ChatListScreen } from '@/screens/main/ChatListScreen';
+import { SearchScreen } from '@/screens/main/SearchScreen';
 import { ChatDetailScreen } from '@/screens/chat/ChatDetailScreen';
 import { ProfileScreen } from '@/screens/profile/ProfileScreen';
 import { GroupInfoScreen } from '@/screens/groups/GroupInfoScreen';
@@ -16,6 +17,8 @@ export function ChatNavigator(): React.JSX.Element {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="ChatList" component={ChatListScreen} />
+      <Stack.Screen name="ArchivedChats" component={ArchivedChatsScreen} />
+      <Stack.Screen name="Search" component={SearchScreen} />
       <Stack.Screen name="ChatDetail" component={ChatDetailScreen} />
       <Stack.Screen name="MediaPreview" component={MediaPreviewScreen} />
       <Stack.Screen name="Profile" component={ProfileScreen} />

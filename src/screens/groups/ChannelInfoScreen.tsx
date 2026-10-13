@@ -190,7 +190,7 @@ export function ChannelInfoScreen({ route, navigation }: Props): React.JSX.Eleme
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       await Share.share({
-        message: `Join ${chat?.name ?? 'this channel'} on Pulse Messenger!`,
+        message: `${chat?.name ?? 'Kanal'}`,
         title: chat?.name ?? 'Channel',
       });
     } catch {

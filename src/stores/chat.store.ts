@@ -70,6 +70,8 @@ export interface Chat {
   isPinned: boolean;
   isMuted: boolean;
   isArchived: boolean;
+  /** Qo'lda "o'qilmagan" deb belgilangan. */
+  isMarkedUnread?: boolean;
   otherUser?: UserPreview;
   memberCount?: number;
   isOnline?: boolean;
@@ -85,8 +87,18 @@ export interface TypingIndicator {
   startedAt: Date;
 }
 
+export interface ChatFolder {
+  id: number;
+  name: string;
+  unreadCount: number;
+}
+
 interface ChatState {
   chats: Chat[];
+  /** Telegram chat papkalari (Sozlamalar → Chat papkalari) va arxiv. */
+  folders: ChatFolder[];
+  /** Ro'yxat kaliti bo'yicha chatlar: 'archive', 'folder:<id>'. Asosiy ro'yxat — `chats`. */
+  listChats: Record<string, Chat[]>;
   messages: Record<string, ChatMessage[]>;
   typingIndicators: TypingIndicator[];
   activeChatId: string | null;
@@ -113,6 +125,8 @@ interface ChatState {
 
 export const useChatStore = create<ChatState>((set) => ({
   chats: [],
+  folders: [],
+  listChats: {},
   messages: {},
   typingIndicators: [],
   activeChatId: null,

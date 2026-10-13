@@ -18,12 +18,14 @@ export type AuthStackParamList = {
 export type MainTabParamList = {
   ChatsTab: NavigatorScreenParams<ChatStackParamList>;
   ContactsTab: undefined;
-  SearchTab: undefined;
   SettingsTab: NavigatorScreenParams<SettingsStackParamList>;
+  ProfileTab: undefined;
 };
 
 export type ChatStackParamList = {
   ChatList: undefined;
+  ArchivedChats: undefined;
+  Search: undefined;
   ChatDetail: {
     chatId: string;
     chatType: ChatType;
@@ -52,4 +54,7 @@ export type SettingsStackParamList = {
   ThemeSettings: undefined;
   EditProfile: undefined;
   BlockedUsers: undefined;
+  Sessions: undefined;
+  Storage: undefined;
+  ChatFolders: undefined;
 };

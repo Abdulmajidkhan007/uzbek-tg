@@ -34,6 +34,7 @@ const CODE_TYPE_LABEL: Record<string, string> = {
 
 let myId = 0;
 let meUser: TdUser | null = null;
+let myBio: string | undefined;
 let unsubscribe: (() => void) | null = null;
 let firstState: (() => void) | null = null;
 
@@ -49,16 +50,35 @@ export function toAuthUser(u: TdUser): AuthUser {
   };
 }
 
+function publishMe(): void {
+  if (meUser) useAuthStore.setState({ currentUser: { ...toAuthUser(meUser), bio: myBio } });
+}
+
 function handleUpdate(update: TdObject): void {
   if (update['@type'] === 'updateAuthorizationState') {
     void applyAuthState(update.authorization_state as TdObject);
+  } else if (update['@type'] === 'updateConnectionState') {
+    const t = (update.state as TdObject)['@type'];
+    useAuthStore.setState({
+      connection:
+        t === 'connectionStateReady'
+          ? 'ready'
+          : t === 'connectionStateUpdating'
+          ? 'updating'
+          : t === 'connectionStateWaitingForNetwork'
+          ? 'waitingForNetwork'
+          : 'connecting',
+    });
   } else if (update['@type'] === 'updateUser') {
     const user = update.user as TdUser;
     if (user.id === myId) {
       meUser = user;
-      useAuthStore.setState({ currentUser: toAuthUser(user) });
+      publishMe();
       requestFile(user.profile_photo?.small);
     }
+  } else if (update['@type'] === 'updateUserFullInfo' && update.user_id === myId) {
+    myBio = (update.user_full_info as { bio?: { text: string } }).bio?.text || undefined;
+    publishMe();
   }
 }
 
@@ -85,12 +105,19 @@ async function applyAuthState(state: TdObject): Promise<void> {
     meUser = me;
     useAuthStore.setState({ currentUser: toAuthUser(me), isAuthenticated: true });
     requestFile(me.profile_photo?.small);
+    td<TdObject & { bio?: { text: string } }>({ '@type': 'getUserFullInfo', user_id: me.id })
+      .then((full) => {
+        myBio = full.bio?.text || undefined;
+        publishMe();
+      })
+      .catch(() => undefined);
     startChatSync();
   } else if (tdState === 'closed') {
     // logOut tugadi: eski instance yopildi, kirish ekrani uchun yangisini ochamiz.
     stopChatSync();
     myId = 0;
     meUser = null;
+    myBio = undefined;
     useAuthStore.setState({ currentUser: null });
     resetTdlib();
     void startTdlib();
@@ -108,7 +135,7 @@ export async function startAuth(): Promise<void> {
     unsubscribe = onTdUpdate(handleUpdate);
     // Avatar yuklab bo'lingach profilni yangilash.
     onFilesChanged(() => {
-      if (meUser) useAuthStore.setState({ currentUser: toAuthUser(meUser) });
+      publishMe();
     });
   }
   const known = new Promise<void>((resolve) => {

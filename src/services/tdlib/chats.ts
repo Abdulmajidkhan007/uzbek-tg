@@ -27,8 +27,27 @@ const dirtyHistory = new Set<number>();
 // TDLib → UI modeli
 // ---------------------------------------------------------------------------
 
+type TdChatList = { '@type': string; chat_folder_id?: number };
+
+/** Ro'yxat kaliti: 'main' | 'archive' | 'folder:<id>'. */
+export function listKey(list: TdChatList): string {
+  if (list['@type'] === 'chatListArchive') return 'archive';
+  if (list['@type'] === 'chatListFolder') return `folder:${list.chat_folder_id}`;
+  return 'main';
+}
+
+function tdList(key: string): TdChatList {
+  if (key === 'archive') return { '@type': 'chatListArchive' };
+  if (key.startsWith('folder:')) return { '@type': 'chatListFolder', chat_folder_id: Number(key.slice(7)) };
+  return { '@type': 'chatListMain' };
+}
+
+function positionIn(chat: TdChat, key: string) {
+  return chat.positions.find((p) => listKey(p.list as TdChatList) === key);
+}
+
 function mainPosition(chat: TdChat) {
-  return chat.positions.find((p) => p.list['@type'] === 'chatListMain');
+  return positionIn(chat, 'main');
 }
 
 /** int64 satrlarni taqqoslash (order) — BigInt'siz: avval uzunlik, keyin leksik. */
@@ -296,8 +315,35 @@ export function toChatMessage(m: TdMessage): ChatMessage {
   };
 }
 
-function toChat(c: TdChat): Chat {
-  const pos = mainPosition(c);
+const typing = new Map<string, { chatId: number; name: string; text: string; timer: ReturnType<typeof setTimeout> }>();
+
+const ACTION_TEXT: Record<string, string> = {
+  chatActionTyping: 'yozmoqda',
+  chatActionRecordingVoiceNote: 'ovozli xabar yozmoqda',
+  chatActionUploadingVoiceNote: 'ovozli xabar yubormoqda',
+  chatActionUploadingPhoto: 'rasm yubormoqda',
+  chatActionUploadingVideo: 'video yubormoqda',
+  chatActionRecordingVideo: 'video yozmoqda',
+  chatActionRecordingVideoNote: 'video xabar yozmoqda',
+  chatActionUploadingVideoNote: 'video xabar yubormoqda',
+  chatActionUploadingDocument: 'fayl yubormoqda',
+  chatActionChoosingSticker: 'stiker tanlamoqda',
+};
+
+/** Chatda kim nima qilyapti: "Ali yozmoqda" / "yozmoqda". */
+export function typingText(chatIdStr: string): string | undefined {
+  const id = Number(chatIdStr);
+  const chat = chats.get(id);
+  const isPrivate = chat?.type['@type'] === 'chatTypePrivate' || chat?.type['@type'] === 'chatTypeSecret';
+  for (const t of typing.values()) {
+    if (t.chatId !== id) continue;
+    return isPrivate || !t.name ? t.text : `${t.name} ${t.text}`;
+  }
+  return undefined;
+}
+
+function toChat(c: TdChat, key = 'main'): Chat {
+  const pos = key === 'main' ? mainPosition(c) : positionIn(c, key);
   let type: Chat['type'] = 'private';
   let otherUser: UserPreview | undefined;
   if (c.type['@type'] === 'chatTypeBasicGroup') type = 'group';
@@ -320,10 +366,13 @@ function toChat(c: TdChat): Chat {
     unreadCount: c.unread_count,
     isPinned: pos?.is_pinned ?? false,
     isMuted: c.notification_settings.mute_for > 0,
-    isArchived: false,
+    isArchived: positionIn(c, 'archive') !== undefined,
+    isMarkedUnread: c.is_marked_as_unread ?? false,
     otherUser,
     memberCount: count || undefined,
     isOnline: otherUser?.status === 'online',
+    isTyping: typingText(String(c.id)) !== undefined,
+    typingUserName: typingText(String(c.id)),
     updatedAt: new Date((c.last_message?.date ?? 0) * 1000),
   };
 }
@@ -339,15 +388,19 @@ function scheduleFlush(): void {
 
 function flush(): void {
   flushTimer = null;
-  const list = [...chats.values()]
-    .filter((c) => {
-      const p = mainPosition(c);
-      return p !== undefined && p.order !== '0';
-    })
-    .sort((a, b) => compareOrderDesc(mainPosition(a)!.order, mainPosition(b)!.order))
-    .map(toChat);
+  const build = (key: string) =>
+    [...chats.values()]
+      .filter((c) => {
+        const p = positionIn(c, key);
+        return p !== undefined && p.order !== '0';
+      })
+      .sort((a, b) => compareOrderDesc(positionIn(a, key)!.order, positionIn(b, key)!.order))
+      .map((c) => toChat(c, key));
   const store = useChatStore.getState();
-  store.setChats(list);
+  store.setChats(build('main'));
+  const listChats: Record<string, Chat[]> = { archive: build('archive') };
+  for (const f of store.folders) listChats[`folder:${f.id}`] = build(`folder:${f.id}`);
+  useChatStore.setState({ listChats });
   dirtyHistory.forEach((chatId) => {
     store.setMessages(String(chatId), (history.get(chatId) ?? []).map(toChatMessage));
   });
@@ -367,7 +420,8 @@ function updateChat(chatId: number, patch: Partial<TdChat>): void {
 function setPosition(chatId: number, position: TdChat['positions'][number]): void {
   const chat = chats.get(chatId);
   if (!chat) return;
-  const others = chat.positions.filter((p) => p.list['@type'] !== position.list['@type']);
+  const key = listKey(position.list as TdChatList);
+  const others = chat.positions.filter((p) => listKey(p.list as TdChatList) !== key);
   chats.set(chatId, { ...chat, positions: position.order === '0' ? others : [...others, position] });
 }
 
@@ -406,6 +460,29 @@ function handleUpdate(u: TdObject): void {
       });
       touchHistory(u.chat_id as number);
       break;
+    case 'updateChatIsMarkedAsUnread':
+      updateChat(u.chat_id as number, { is_marked_as_unread: u.is_marked_as_unread as boolean });
+      break;
+    case 'updateChatAction': {
+      // "yozmoqda..." — 6 soniyada o'zi o'chadi (TDLib ham shunday tavsiya qiladi).
+      const chatId = u.chat_id as number;
+      const sender = u.sender_id as TdMessage['sender_id'];
+      const action = (u.action as { '@type': string })['@type'];
+      const key = `${chatId}:${sender.user_id ?? sender.chat_id}`;
+      const prev = typing.get(key);
+      if (prev) clearTimeout(prev.timer);
+      if (action === 'chatActionCancel') {
+        typing.delete(key);
+      } else {
+        const name = sender.user_id ? users.get(sender.user_id)?.first_name ?? '' : '';
+        const timer = setTimeout(() => {
+          typing.delete(key);
+          scheduleFlush();
+        }, 6000);
+        typing.set(key, { chatId, name, text: ACTION_TEXT[action] ?? 'yozmoqda', timer });
+      }
+      break;
+    }
     case 'updateChatNotificationSettings':
       updateChat(u.chat_id as number, {
         notification_settings: u.notification_settings as TdChat['notification_settings'],
@@ -416,6 +493,28 @@ function handleUpdate(u: TdObject): void {
       users.set(user.id, user);
       requestFile(user.profile_photo?.small);
       break;
+    }
+    case 'updateChatFolders': {
+      const list = u.chat_folders as { id: number; name: { text: { text: string } } }[];
+      const prev = useChatStore.getState().folders;
+      useChatStore.setState({
+        folders: list.map((f) => ({
+          id: f.id,
+          name: f.name.text.text,
+          unreadCount: prev.find((p) => p.id === f.id)?.unreadCount ?? 0,
+        })),
+      });
+      for (const f of list) void loadMoreChats(`folder:${f.id}`);
+      break;
+    }
+    case 'updateUnreadChatCount': {
+      const key = listKey(u.chat_list as TdChatList);
+      if (!key.startsWith('folder:')) return;
+      const id = Number(key.slice(7));
+      useChatStore.setState((st) => ({
+        folders: st.folders.map((f) => (f.id === id ? { ...f, unreadCount: u.unread_count as number } : f)),
+      }));
+      return;
     }
     case 'updateBasicGroup': {
       const g = u.basic_group as { id: number; member_count: number };
@@ -514,6 +613,7 @@ export function startChatSync(): void {
     scheduleFlush();
   });
   void loadMoreChats();
+  void loadMoreChats('archive', 30);
 }
 
 export function stopChatSync(): void {
@@ -521,13 +621,14 @@ export function stopChatSync(): void {
   users.clear();
   history.clear();
   useChatStore.getState().setChats([]);
+  useChatStore.setState({ folders: [], listChats: {} });
 }
 
 /** Asosiy ro'yxatdan yana chat yuklaydi; hammasi yuklangan bo'lsa false. */
-export async function loadMoreChats(limit = 50): Promise<boolean> {
+export async function loadMoreChats(key = 'main', limit = 50): Promise<boolean> {
   useChatStore.setState({ isLoadingChats: true });
   try {
-    await td({ '@type': 'loadChats', chat_list: { '@type': 'chatListMain' }, limit });
+    await td({ '@type': 'loadChats', chat_list: tdList(key), limit });
     return true;
   } catch {
     // 404 — ro'yxat oxiriga yetildi.
@@ -791,4 +892,42 @@ export async function setChatMuted(chatIdStr: string, muted: boolean): Promise<v
       use_default_disable_mention_notifications: true,
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Chat ro'yxatidagi amallar (uzoq bosish menyusi)
+// ---------------------------------------------------------------------------
+
+export async function setChatPinned(chatIdStr: string, key: string, pinned: boolean): Promise<void> {
+  await td({ '@type': 'toggleChatIsPinned', chat_list: tdList(key), chat_id: Number(chatIdStr), is_pinned: pinned });
+}
+
+export async function setChatArchived(chatIdStr: string, archived: boolean): Promise<void> {
+  await td({
+    '@type': 'addChatToList',
+    chat_id: Number(chatIdStr),
+    chat_list: archived ? { '@type': 'chatListArchive' } : { '@type': 'chatListMain' },
+  });
+}
+
+/** Chatdagi oxirgi xabarni o'qilgan deb belgilaydi (Telegram'dagi "O'qilgan deb belgilash"). */
+export async function markChatRead(chatIdStr: string): Promise<void> {
+  const chat = chats.get(Number(chatIdStr));
+  const last = chat?.last_message?.id;
+  if (last) {
+    await td({ '@type': 'viewMessages', chat_id: Number(chatIdStr), message_ids: [last], force_read: true });
+  }
+  await td({ '@type': 'toggleChatIsMarkedAsUnread', chat_id: Number(chatIdStr), is_marked_as_unread: false }).catch(
+    () => undefined,
+  );
+}
+
+/** Shaxsiy chat — tarixni o'chiradi; guruh/kanal — chiqib ketadi. */
+export async function deleteChat(chatIdStr: string): Promise<void> {
+  const chat = chats.get(Number(chatIdStr));
+  const t = chat?.type['@type'];
+  if (t === 'chatTypeBasicGroup' || t === 'chatTypeSupergroup') {
+    await td({ '@type': 'leaveChat', chat_id: Number(chatIdStr) });
+  }
+  await td({ '@type': 'deleteChatHistory', chat_id: Number(chatIdStr), remove_from_chat_list: true, revoke: false });
 }

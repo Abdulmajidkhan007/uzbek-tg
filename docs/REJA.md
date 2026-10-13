@@ -80,8 +80,38 @@
   foydalanuvchi tuzatildi.
 - Tizim `Alert` o'rniga Telegram uslubidagi dialog/pastki menyu (`components/ui/Dialog.tsx`).
   Qo'ng'iroq tugmalari olib tashlandi (TDLib qo'ng'iroqlari uchun WebRTC kerak — keyinroq).
-- Qolgan: animatsiyali stiker (lottie/webm), media yuborish, ovoz yozish, reply preview,
-  "yozmoqda", push, umumiy dizaynni Telegram'ga yaqinlashtirish.
+- **Telegram uslubidagi UI (2026-10-13, kod yozildi, telefonda hali sinalmagan):**
+  - Yangi ikonka (ko'k-yashil fon, oq "UZ" pufakcha), "Pulse" nomlari "Uzbek TG" ga.
+  - Chatlar: sarlavhada ulanish holati ("Ulanmoqda..." / "Yangilanmoqda..."),
+    papka tablari (Telegram'dagi chat folders, o'qilmaganlar soni bilan), arxiv qatori va
+    Arxiv ekrani, qadalgan/ovozsiz belgilari, ✓/✓✓, guruhda yuboruvchi nomi,
+    "yozmoqda..." (`updateChatAction`, chat sarlavhasida ham).
+  - Uzoq bosish menyusi: qadash, ovozsiz, o'qilgan deb belgilash, arxivlash,
+    o'chirish/chiqish.
+  - Pastda suzuvchi "pill" panel: Chatlar / Kontaktlar / Sozlamalar / Profil
+    (chat ichida yashiriladi). Qidiruv chatlar sarlavhasidagi tugmada.
+  - Sozlamalar: markazda avatar, telefon • @username, rangli bo'limlar;
+    yangi ekranlar — Qurilmalar (seanslar, tugatish), Ma'lumotlar va xotira
+    (kesh hajmi, tozalash), Chat papkalari (faqat ko'rish).
+  - Profil tabi: Rasm qo'yish / Tahrirlash / Sozlamalar, telefon, bio, username.
+
+#### Telegram bilan tenglik ro'yxati (ghost mode'dan oldin)
+| Funksiya | Holat |
+|---|---|
+| Kirish (kod, 2FA), chiqish | ✅ ishlaydi |
+| Chatlar ro'yxati, papkalar, arxiv, qadash/ovozsiz/arxivlash | ⏳ kod yozildi |
+| Matn yuborish, reaksiya, o'chirish, uzatish, pin | ✅ ishlaydi |
+| Rasm/video/ovoz/fayl ko'rish va ijro | ✅ ishlaydi (egasi tasdiqladi) |
+| "yozmoqda" ko'rsatkichi | ⏳ kod yozildi |
+| Qurilmalar (seanslar), kesh | ⏳ kod yozildi |
+| Javob (reply) preview, xabarni tahrirlash | ❌ yo'q |
+| Rasm/video/fayl yuborish, ovoz yozish | ❌ yo'q |
+| Animatsiyali stiker, GIF ijrosi ro'yxatda | ❌ statik |
+| Maxfiylik sozlamalari (haqiqiy `getUserPrivacySettingRules`) | ❌ ekran bor, TDLib'ga ulanmagan |
+| Bildirishnomalar sozlamalari, push | ❌ yo'q |
+| Papka yaratish/tahrirlash | ❌ yo'q |
+| Galereyaga saqlash/ulashish | ❌ yo'q |
+| Qo'ng'iroqlar | ❌ (WebRTC kerak, keyinroq) |
 
 ### Release imzo kaliti
 - `.github/workflows/release-keystore.yml` (qo'lda, `confirm=HA`) — PKCS12 kalit

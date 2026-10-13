@@ -15,7 +15,7 @@ import type { StackScreenProps } from '@react-navigation/stack';
 
 import { useTheme } from '@/hooks/useTheme';
 import Divider from '@/components/ui/Divider';
-import type { SettingsStackParamList } from '@/types';
+import type { SettingsStackParamList } from '@/navigation/types';
 import { showAlert } from '@/components/ui/Dialog';
 
 // ---------------------------------------------------------------------------
@@ -305,7 +305,7 @@ export function NotificationSettingsScreen({ navigation }: Props): React.JSX.Ele
             isLast={false}
           />
           <ToggleRow
-            label="Contact Joined Pulse"
+            label={"Kontakt Telegram'ga qo'shildi"}
             value={state.contactJoined}
             onValueChange={(val) => setState((prev) => ({ ...prev, contactJoined: val }))}
             isFirst={false}

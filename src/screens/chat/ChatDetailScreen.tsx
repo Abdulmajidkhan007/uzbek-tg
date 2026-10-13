@@ -709,6 +709,7 @@ export function ChatDetailScreen({ navigation, route }: Props) {
   // Header sub-title
   // ---------------------------------------------------------------------------
   const headerSubtitle = useMemo(() => {
+    if (chat?.isTyping && chat.typingUserName) return `${chat.typingUserName}...`;
     if (chatType === 'group' || chatType === 'topic_group' || chatType === 'channel') {
       const count = chat?.memberCount;
       if (chatType === 'channel') return count != null ? `${count} obunachi` : 'Kanal';

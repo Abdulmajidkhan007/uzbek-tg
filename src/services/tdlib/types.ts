@@ -85,6 +85,7 @@ export interface TdChat {
   unread_count: number;
   last_read_outbox_message_id: number;
   notification_settings: { mute_for: number };
+  is_marked_as_unread?: boolean;
 }
 
 export interface TdUser {

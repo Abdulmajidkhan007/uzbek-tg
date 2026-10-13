@@ -7,6 +7,9 @@ import { PrivacySettingsScreen } from '@/screens/settings/PrivacySettingsScreen'
 import { ThemeSettingsScreen } from '@/screens/settings/ThemeSettingsScreen';
 import { EditProfileScreen } from '@/screens/profile/EditProfileScreen';
 import { BlockedUsersScreen } from '@/screens/settings/BlockedUsersScreen';
+import { SessionsScreen } from '@/screens/settings/SessionsScreen';
+import { StorageScreen } from '@/screens/settings/StorageScreen';
+import { ChatFoldersScreen } from '@/screens/settings/ChatFoldersScreen';
 
 const Stack = createStackNavigator<SettingsStackParamList>();
 
@@ -19,6 +22,9 @@ export function SettingsNavigator(): React.JSX.Element {
       <Stack.Screen name="ThemeSettings" component={ThemeSettingsScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
+      <Stack.Screen name="Sessions" component={SessionsScreen} />
+      <Stack.Screen name="Storage" component={StorageScreen} />
+      <Stack.Screen name="ChatFolders" component={ChatFoldersScreen} />
     </Stack.Navigator>
   );
 }
