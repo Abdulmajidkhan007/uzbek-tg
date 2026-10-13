@@ -48,6 +48,16 @@ export interface ChatMessage {
   waveform?: number[];
   fileName?: string;
   fileSize?: number;
+  /** Ro'yxat/qidiruv uchun bir qatorli matn (masalan "📷 Rasm izoh"). */
+  previewText?: string;
+  /** Media turi: bubble qanday chizilishini aniqlaydi. */
+  mediaKind?: 'photo' | 'video' | 'gif' | 'sticker' | 'videoNote';
+  /** Kichik oldindan ko'rinish (minithumbnail data: URI yoki thumbnail fayl). */
+  thumbUrl?: string;
+  mediaWidth?: number;
+  mediaHeight?: number;
+  /** TDLib fayl id — to'liq faylni yuklab olish/ijro uchun. */
+  mediaFileId?: number;
 }
 
 export interface Chat {

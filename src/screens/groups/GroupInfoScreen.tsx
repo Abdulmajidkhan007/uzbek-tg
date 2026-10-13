@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +19,7 @@ import { useChatStore } from '@/stores/chat.store';
 import { loadMembers, setChatMuted } from '@/services/tdlib/chats';
 import type { ChatStackParamList } from '@/navigation/types';
 import type { UserPreview } from '@/stores/chat.store';
+import { showAlert } from '@/components/ui/Dialog';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -231,7 +231,7 @@ export function GroupInfoScreen({ route, navigation }: Props): React.JSX.Element
 
   const handleEdit = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert('Edit Group', 'Group editing is not available in this demo.');
+    showAlert('Edit Group', 'Group editing is not available in this demo.');
   }, []);
 
   const handleMute = useCallback(() => {
@@ -244,12 +244,12 @@ export function GroupInfoScreen({ route, navigation }: Props): React.JSX.Element
 
   const handleSearch = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert('Search', 'Message search within this group coming soon.');
+    showAlert('Search', 'Message search within this group coming soon.');
   }, []);
 
   const handleLeave = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert(
+    showAlert(
       'Leave Group',
       `Are you sure you want to leave "${chat?.name ?? 'this group'}"?`,
       [

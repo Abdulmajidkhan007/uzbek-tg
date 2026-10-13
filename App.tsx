@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'react-native';
 import { RootNavigator } from '@/navigation/RootNavigator';
+import { DialogHost } from '@/components/ui/Dialog';
 import { initAuthStore, useAuthStore } from '@/stores/auth.store';
 import { initUIStore } from '@/stores/ui.store';
 import { useUIStore } from '@/stores/ui.store';
@@ -78,6 +79,7 @@ function AppShell(): React.JSX.Element {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <AppContent />
+        <DialogHost />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

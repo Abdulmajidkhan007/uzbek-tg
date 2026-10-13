@@ -70,6 +70,19 @@
   yig'iladi; barcha TDLib so'rov/maydon nomlari 1.8.68 `td_api.tl` bilan
   solishtirildi.
 
+### 2-faza (boshlandi, 2026-10-13)
+- Egasi haqiqiy akkaunt bilan kirdi: chatlar, guruhlar, qidiruv ishlaydi (1-faza tasdiqlandi).
+- Media xabarlar (`src/components/chat/MediaContent.tsx`): rasm (minithumbnail → to'liq),
+  video/GIF/dumaloq video-xabar (oldindan ko'rinish + to'liq ekranda `react-native-video`),
+  stiker (webp; animatsiyali — statik thumbnail), ovozli xabar va audio (yuklab olib ijro,
+  waveform), fayl (yuklab olish). Galereyaga saqlash/ulashish hali yo'q.
+- Guruh/kanal a'zolari soni (`updateBasicGroup`/`updateSupergroup`), qidiruvda nomsiz
+  foydalanuvchi tuzatildi.
+- Tizim `Alert` o'rniga Telegram uslubidagi dialog/pastki menyu (`components/ui/Dialog.tsx`).
+  Qo'ng'iroq tugmalari olib tashlandi (TDLib qo'ng'iroqlari uchun WebRTC kerak — keyinroq).
+- Qolgan: animatsiyali stiker (lottie/webm), media yuborish, ovoz yozish, reply preview,
+  "yozmoqda", push, umumiy dizaynni Telegram'ga yaqinlashtirish.
+
 ### Release imzo kaliti
 - `.github/workflows/release-keystore.yml` (qo'lda, `confirm=HA`) — PKCS12 kalit
   (alias `uzbektg`, RSA 4096, tasodifiy parol) yaratib, 1 kunlik artifact beradi.

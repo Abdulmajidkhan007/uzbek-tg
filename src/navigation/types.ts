@@ -34,6 +34,9 @@ export type ChatStackParamList = {
     mediaUrls: string[];
     initialIndex: number;
     title: string;
+    /** TDLib fayl: to'liq rasm/videoni ekran ochilgach yuklab oladi. */
+    fileId?: number;
+    kind?: 'photo' | 'video';
   };
   Profile: { userId: string };
   GroupInfo: { chatId: string };

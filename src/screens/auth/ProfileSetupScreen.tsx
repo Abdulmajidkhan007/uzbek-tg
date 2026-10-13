@@ -10,7 +10,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Image,
-  Alert,
 } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,6 +20,7 @@ import type { StackScreenProps } from '@react-navigation/stack';
 import type { AuthStackParamList } from '@/navigation/types';
 import { useTheme } from '@/hooks/useTheme';
 import { authErrorText, registerUser } from '@/services/tdlib/auth';
+import { showAlert } from '@/components/ui/Dialog';
 
 type Props = StackScreenProps<AuthStackParamList, 'ProfileSetup'>;
 
@@ -82,7 +82,7 @@ export function ProfileSetupScreen(_props: Props): React.JSX.Element {
       await registerUser(firstName.trim(), lastName.trim());
       // TDLib "ready" bo'lgach RootNavigator chatlarga o'tkazadi.
     } catch (e) {
-      Alert.alert("Ro'yxatdan o'tib bo'lmadi", authErrorText(e));
+      showAlert("Ro'yxatdan o'tib bo'lmadi", authErrorText(e));
       setIsSubmitting(false);
     }
   }, [isSubmitEnabled, firstName, lastName]);

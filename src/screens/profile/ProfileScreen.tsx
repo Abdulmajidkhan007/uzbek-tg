@@ -1,11 +1,10 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,7 +17,9 @@ import Avatar from '@/components/common/Avatar';
 import Divider from '@/components/ui/Divider';
 import { useChatStore } from '@/stores/chat.store';
 import { openPrivateChat, setUserBlocked } from '@/services/tdlib/chats';
+import { td } from '@/services/tdlib/client';
 import type { ChatStackParamList } from '@/navigation/types';
+import { showActionSheet, showAlert } from '@/components/ui/Dialog';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -125,6 +126,11 @@ export function ProfileScreen({ route, navigation }: Props): React.JSX.Element {
     [chats, userId],
   );
   const [isBlocked, setIsBlocked] = useState(false);
+  useEffect(() => {
+    td<{ '@type': string; block_list?: unknown }>({ '@type': 'getUserFullInfo', user_id: Number(userId) })
+      .then((info) => setIsBlocked(info.block_list != null))
+      .catch(() => undefined);
+  }, [userId]);
 
   const fullName = useMemo(
     () => (user ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ''}` : 'Unknown User'),
@@ -155,21 +161,11 @@ export function ProfileScreen({ route, navigation }: Props): React.JSX.Element {
       .catch(() => undefined);
   }, [user, navigation]);
 
-  const handleCall = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert('Voice Call', `Calling ${fullName}...`);
-  }, [fullName]);
-
-  const handleVideoCall = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert('Video Call', `Starting video call with ${fullName}...`);
-  }, [fullName]);
-
   const handleShare = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       await Share.share({
-        message: `${fullName} is on Pulse Messenger${user?.username ? ` as ${user.username}` : ''}.`,
+        message: user?.username ? `https://t.me/${user.username}` : fullName,
         title: fullName,
       });
     } catch {
@@ -180,10 +176,10 @@ export function ProfileScreen({ route, navigation }: Props): React.JSX.Element {
   const handleBlock = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (isBlocked) {
-      Alert.alert('Unblock User', `Allow ${fullName} to message you again?`, [
-        { text: 'Cancel', style: 'cancel' },
+      showAlert('Blokdan chiqarish', `${fullName} sizga yana yoza oladi.`, [
+        { text: 'Bekor qilish', style: 'cancel' },
         {
-          text: 'Unblock',
+          text: 'Blokdan chiqarish',
           onPress: () => {
             setIsBlocked(false);
             void setUserBlocked(userId, false);
@@ -192,10 +188,10 @@ export function ProfileScreen({ route, navigation }: Props): React.JSX.Element {
         },
       ]);
     } else {
-      Alert.alert('Block User', `Block ${fullName}? They won't be able to message you.`, [
-        { text: 'Cancel', style: 'cancel' },
+      showAlert('Bloklash', `${fullName} bloklansinmi? U sizga yoza olmaydi.`, [
+        { text: 'Bekor qilish', style: 'cancel' },
         {
-          text: 'Block',
+          text: 'Bloklash',
           style: 'destructive',
           onPress: () => {
             setIsBlocked(true);
@@ -205,22 +201,27 @@ export function ProfileScreen({ route, navigation }: Props): React.JSX.Element {
         },
       ]);
     }
-  }, [isBlocked, fullName]);
+  }, [isBlocked, fullName, userId]);
 
   const handleMore = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert(fullName, 'More options', [
-      { text: 'Report User', style: 'destructive', onPress: () => {} },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  }, [fullName]);
+    showActionSheet({
+      title: fullName,
+      options: [
+        { text: 'Ulashish', icon: 'share-social-outline', onPress: handleShare },
+        isBlocked
+          ? { text: 'Blokdan chiqarish', icon: 'lock-open-outline', onPress: handleBlock }
+          : { text: 'Bloklash', icon: 'hand-left-outline', destructive: true, onPress: handleBlock },
+      ],
+    });
+  }, [fullName, isBlocked, handleShare, handleBlock]);
 
   if (!user) {
     return (
       <SafeAreaView style={[styles.root, { backgroundColor: theme.colors.background }]} edges={['top']}>
         <View style={styles.centered}>
           <Text style={[theme.textStyles.bodyMedium, { color: theme.colors.textSecondary }]}>
-            User not found.
+            Foydalanuvchi topilmadi.
           </Text>
         </View>
       </SafeAreaView>
@@ -269,10 +270,8 @@ export function ProfileScreen({ route, navigation }: Props): React.JSX.Element {
           </Text>
           {/* Actions */}
           <View style={[styles.actionsRow, { marginTop: theme.spacing.xl, paddingHorizontal: theme.spacing.xl, gap: theme.spacing.md }]}>
-            <ActionButton icon="chatbubble-outline" label="Message" onPress={handleMessage} />
-            <ActionButton icon="call-outline" label="Call" onPress={handleCall} />
-            <ActionButton icon="videocam-outline" label="Video" onPress={handleVideoCall} />
-            <ActionButton icon="share-outline" label="Share" onPress={handleShare} />
+            <ActionButton icon="chatbubble-outline" label="Xabar" onPress={handleMessage} />
+            <ActionButton icon="share-outline" label="Ulashish" onPress={handleShare} />
           </View>
         </View>
 

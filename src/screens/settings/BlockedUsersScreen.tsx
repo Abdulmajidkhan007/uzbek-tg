@@ -4,7 +4,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,6 +18,7 @@ import Divider from '@/components/ui/Divider';
 import type { SettingsStackParamList } from '@/types';
 import { loadBlockedUsers, setUserBlocked } from '@/services/tdlib/chats';
 import type { UserPreview } from '@/stores/chat.store';
+import { showAlert } from '@/components/ui/Dialog';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,7 +50,7 @@ const BlockedUserRow = React.memo(function BlockedUserRow({
 
   const handleUnblock = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    Alert.alert(
+    showAlert(
       'Unblock User',
       `Unblock ${fullName}? They will be able to message you again.`,
       [
