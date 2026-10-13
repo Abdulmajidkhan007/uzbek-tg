@@ -258,11 +258,7 @@ export function SearchScreen(): React.JSX.Element {
 
   const [query, setQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
-  const [recentSearches, setRecentSearches] = useState<string[]>([
-    'Sofia',
-    'Design Team',
-    'Tech News',
-  ]);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
   // Focus input when tab becomes active
   useEffect(() => {
@@ -493,15 +489,18 @@ export function SearchScreen(): React.JSX.Element {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Search</Text>
-        <View style={styles.searchBar}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={{ paddingRight: 14 }} accessibilityLabel="Orqaga">
+          <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+        </Pressable>
+        <View style={[styles.searchBar, { flex: 1 }]}>
           <Ionicons name="search" size={18} color={theme.colors.textSecondary} />
           <TextInput
             ref={inputRef}
             style={styles.searchInput}
             value={query}
             onChangeText={handleQueryChange}
-            placeholder="Search messages, people, groups..."
+            placeholder="Chatlar, odamlar, xabarlar..."
             placeholderTextColor={theme.colors.textTertiary}
             returnKeyType="search"
             clearButtonMode="never"
@@ -521,6 +520,7 @@ export function SearchScreen(): React.JSX.Element {
             </Pressable>
           )}
         </View>
+        </View>
       </View>
 
       {/* Body */}
@@ -528,7 +528,7 @@ export function SearchScreen(): React.JSX.Element {
         <View style={styles.recentSection}>
           {recentSearches.length > 0 && (
             <>
-              <Text style={styles.recentTitle}>Recent</Text>
+              <Text style={styles.recentTitle}>Yaqinda qidirilgan</Text>
               <View style={styles.chipsRow}>
                 {recentSearches.map((term) => (
                   <RecentChip
@@ -557,8 +557,8 @@ export function SearchScreen(): React.JSX.Element {
         <View style={styles.emptyContainer}>
           <EmptyState
             icon="🔍"
-            title="No results found"
-            subtitle={`Nothing matched "${query}". Try different keywords.`}
+            title="Hech narsa topilmadi"
+            subtitle={`"${query}" bo'yicha hech narsa topilmadi.`}
           />
         </View>
       )}

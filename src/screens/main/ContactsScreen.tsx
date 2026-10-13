@@ -26,7 +26,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from '@/utils/haptics';
 import { useNavigation } from '@react-navigation/native';
-import type { StackNavigationProp } from '@react-navigation/stack';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 
 import { useTheme } from '@/hooks/useTheme';
 import Avatar from '@/components/common/Avatar';
@@ -49,13 +49,13 @@ function toSections(list: UserPreview[]): ContactSection[] {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([letter, data]) => ({ letter, data }));
 }
-import type { ChatStackParamList } from '@/navigation/types';
+import type { MainTabParamList } from '@/navigation/types';
 import type { UserPreview } from '@/stores/chat.store';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-type NavProp = StackNavigationProp<ChatStackParamList>;
+type NavProp = BottomTabNavigationProp<MainTabParamList>;
 
 // ---------------------------------------------------------------------------
 // Contact row sub-component
@@ -287,11 +287,15 @@ export function ContactsScreen(): React.JSX.Element {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       openPrivateChat(contact.id)
         .then((chat) =>
-          navigation.navigate('ChatDetail', {
-            chatId: chat.id,
-            chatType: chat.type,
-            title: chat.name,
-            avatarUrl: chat.avatarUrl,
+          navigation.navigate('ChatsTab', {
+            screen: 'ChatDetail',
+            initial: false,
+            params: {
+              chatId: chat.id,
+              chatType: chat.type,
+              title: chat.name,
+              avatarUrl: chat.avatarUrl,
+            },
           }),
         )
         .catch(() => undefined);
@@ -318,8 +322,8 @@ export function ContactsScreen(): React.JSX.Element {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await Share.share({
-        message: 'Join me on Pulse Messenger! Download it at https://pulse.app',
-        title: 'Invite to Pulse Messenger',
+        message: "Uzbek TG'da yozishaylik!",
+        title: "Uzbek TG'ga taklif",
       });
     } catch {
       // Share dismissed
@@ -389,7 +393,7 @@ export function ContactsScreen(): React.JSX.Element {
               { color: theme.colors.textSecondary },
             ]}
           >
-            Share Pulse with your contacts
+            Do'stlaringizni taklif qiling
           </Text>
         </View>
         <Ionicons
@@ -428,7 +432,7 @@ export function ContactsScreen(): React.JSX.Element {
           style={[theme.textStyles.headingLarge, { color: theme.colors.text }]}
           accessibilityRole="header"
         >
-          Contacts
+          Kontaktlar
         </Text>
         <View style={styles.headerActions}>
           <TouchableOpacity
@@ -440,21 +444,6 @@ export function ContactsScreen(): React.JSX.Element {
           >
             <Ionicons
               name={isSearchVisible ? 'close-outline' : 'search-outline'}
-              size={24}
-              color={theme.colors.primary}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            }}
-            style={[styles.headerIcon, { marginLeft: theme.spacing.xs }]}
-            accessibilityRole="button"
-            accessibilityLabel="Add contact"
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name="person-add-outline"
               size={24}
               color={theme.colors.primary}
             />
@@ -494,7 +483,7 @@ export function ContactsScreen(): React.JSX.Element {
               ref={searchInputRef}
               value={searchQuery}
               onChangeText={setSearchQuery}
-              placeholder="Search contacts..."
+              placeholder="Kontaktlarni qidirish..."
               placeholderTextColor={theme.colors.textTertiary}
               style={[
                 styles.searchInput,
@@ -532,8 +521,8 @@ export function ContactsScreen(): React.JSX.Element {
           <View style={styles.emptyWrapper}>
             <EmptyState
               icon="👤"
-              title="No Contacts Found"
-              subtitle={`No contacts match "${searchQuery}".`}
+              title="Kontakt topilmadi"
+              subtitle={`"${searchQuery}" bo'yicha kontakt yo'q.`}
             />
           </View>
         ) : (

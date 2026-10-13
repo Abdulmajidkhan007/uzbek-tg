@@ -1,21 +1,16 @@
-import React, { useCallback, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-} from 'react-native';
-import Swipeable from 'react-native-gesture-handler/Swipeable';
+/**
+ * Chat ro'yxatidagi bitta qator (Telegram uslubi): avatar, nom + ovozsiz
+ * belgisi, holat belgilari va vaqt; pastda yuboruvchi + oldindan ko'rinish,
+ * o'qilmaganlar soni yoki qadalgan belgisi.
+ */
+import React, { useCallback } from 'react';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { format, isToday, isYesterday, isThisWeek, isThisYear } from 'date-fns';
+import { format, isToday, isThisWeek, isThisYear } from 'date-fns';
 import { useTheme } from '@/hooks/useTheme';
 import Avatar from '@/components/common/Avatar';
-import Badge from '@/components/ui/Badge';
-import { Chat } from '@/stores/chat.store';
+import type { Chat } from '@/stores/chat.store';
 
-// ---------------------------------------------------------------------------
-// Prop interface
-// ---------------------------------------------------------------------------
 export interface ChatListItemProps {
   chat: Chat;
   onPress: (chatId: string) => void;
@@ -23,325 +18,164 @@ export interface ChatListItemProps {
   currentUserId?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-function formatTimestamp(date: Date): string {
+const WEEKDAYS = ['Yak', 'Dush', 'Sesh', 'Chor', 'Pay', 'Jum', 'Shan'];
+const MONTHS = ['yan', 'fev', 'mar', 'apr', 'may', 'iyn', 'iyl', 'avg', 'sen', 'okt', 'noy', 'dek'];
+
+export function formatChatTime(date: Date): string {
+  if (date.getTime() === 0) return '';
   if (isToday(date)) return format(date, 'HH:mm');
-  if (isYesterday(date)) return 'Yesterday';
-  if (isThisWeek(date, { weekStartsOn: 1 })) return format(date, 'EEE');
-  if (isThisYear(date)) return format(date, 'MMM d');
-  return format(date, 'MM/dd/yy');
+  if (isThisWeek(date, { weekStartsOn: 1 })) return WEEKDAYS[date.getDay()] ?? '';
+  if (isThisYear(date)) return `${date.getDate()}-${MONTHS[date.getMonth()]}`;
+  return format(date, 'dd.MM.yy');
 }
 
-interface PreviewResult {
-  text: string;
-  prefix: string;
-  isTyping: boolean;
-  isDeleted: boolean;
-  isVoice: boolean;
-  isImage: boolean;
-}
-
-function buildPreview(chat: Chat, currentUserId: string | undefined): PreviewResult {
-  const base: PreviewResult = {
-    text: '',
-    prefix: '',
-    isTyping: false,
-    isDeleted: false,
-    isVoice: false,
-    isImage: false,
-  };
-
-  if (chat.isTyping) {
-    const who = chat.typingUserName ?? 'Someone';
-    return { ...base, text: `${who} yozmoqda...`, isTyping: true };
-  }
-
-  const msg = chat.lastMessage;
-  if (!msg) {
-    return { ...base, text: "Hali xabar yo'q" };
-  }
-
-  if (msg.isDeleted) {
-    return { ...base, text: "Xabar o'chirilgan", isDeleted: true };
-  }
-
-  const isOwn = currentUserId != null && msg.senderId === currentUserId;
-  return {
-    ...base,
-    prefix: isOwn ? 'Siz: ' : '',
-    text: msg.previewText ?? msg.text ?? '',
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Swipe action renderers
-// ---------------------------------------------------------------------------
-function RightActions({
-  onDelete,
-  theme,
-}: {
-  onDelete: () => void;
-  theme: ReturnType<typeof useTheme>;
-}) {
-  return (
-    <View style={styles.swipeContainer}>
-      <TouchableOpacity
-        style={[styles.swipeAction, { backgroundColor: theme.colors.error }]}
-        onPress={onDelete}
-        accessibilityLabel="Delete chat"
-        accessibilityRole="button"
-      >
-        <Ionicons name="trash-outline" size={22} color="#FFFFFF" />
-        <Text style={styles.swipeLabel}>Delete</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-function LeftActions({
-  onPin,
-  onMute,
-  isPinned,
-  isMuted,
-  theme,
-}: {
-  onPin: () => void;
-  onMute: () => void;
-  isPinned: boolean;
-  isMuted: boolean;
-  theme: ReturnType<typeof useTheme>;
-}) {
-  return (
-    <View style={styles.swipeContainer}>
-      <TouchableOpacity
-        style={[styles.swipeAction, { backgroundColor: theme.colors.accent }]}
-        onPress={onPin}
-        accessibilityLabel={isPinned ? 'Unpin chat' : 'Pin chat'}
-        accessibilityRole="button"
-      >
-        <Ionicons
-          name={isPinned ? 'pin' : 'pin-outline'}
-          size={22}
-          color="#FFFFFF"
-        />
-        <Text style={styles.swipeLabel}>{isPinned ? 'Unpin' : 'Pin'}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[styles.swipeAction, { backgroundColor: theme.colors.textSecondary }]}
-        onPress={onMute}
-        accessibilityLabel={isMuted ? 'Unmute chat' : 'Mute chat'}
-        accessibilityRole="button"
-      >
-        <Ionicons
-          name={isMuted ? 'volume-high-outline' : 'volume-mute-outline'}
-          size={22}
-          color="#FFFFFF"
-        />
-        <Text style={styles.swipeLabel}>{isMuted ? 'Unmute' : 'Mute'}</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 const ChatListItem = React.memo(function ChatListItem({
   chat,
   onPress,
   onLongPress,
-  currentUserId,
+  currentUserId = 'me',
 }: ChatListItemProps) {
   const theme = useTheme();
-  const swipeableRef = useRef<Swipeable>(null);
+  const c = theme.colors;
 
-  const handlePress = useCallback(() => {
-    onPress(chat.id);
-  }, [onPress, chat.id]);
+  const handlePress = useCallback(() => onPress(chat.id), [onPress, chat.id]);
+  const handleLongPress = useCallback(() => onLongPress?.(chat.id), [onLongPress, chat.id]);
 
-  const handleLongPress = useCallback(() => {
-    onLongPress?.(chat.id);
-  }, [onLongPress, chat.id]);
+  const msg = chat.lastMessage;
+  const isOwn = msg != null && msg.senderId === currentUserId;
+  const isGroup = chat.type === 'group' || chat.type === 'topic_group';
 
-  const handleDelete = useCallback(() => {
-    swipeableRef.current?.close();
-  }, []);
+  let prefix = '';
+  if (msg && !chat.isTyping) {
+    if (isOwn && chat.type !== 'channel') prefix = 'Siz';
+    else if (isGroup && msg.senderPreview.firstName) prefix = msg.senderPreview.firstName;
+  }
+  const preview = chat.isTyping
+    ? `${chat.typingUserName ?? 'yozmoqda'}...`
+    : msg
+    ? msg.previewText ?? msg.text ?? ''
+    : '';
 
-  const handlePin = useCallback(() => {
-    swipeableRef.current?.close();
-  }, []);
-
-  const handleMute = useCallback(() => {
-    swipeableRef.current?.close();
-  }, []);
-
-  const preview = buildPreview(chat, currentUserId);
-  const timestamp = formatTimestamp(chat.updatedAt);
-  const isPrivate = chat.type === 'private';
+  const unread = chat.unreadCount > 0 || chat.isMarkedUnread;
   const avatarUri = chat.avatarUrl ?? chat.otherUser?.avatarUrl;
 
-  // Determine preview text color
-  let previewColor = theme.colors.textSecondary;
-  if (preview.isTyping) previewColor = theme.colors.primary;
-  if (preview.isDeleted) previewColor = theme.colors.textTertiary;
+  let tick: string | null = null;
+  if (isOwn && msg && chat.type !== 'channel') {
+    if (msg.status === 'sending') tick = 'time-outline';
+    else if (msg.status === 'failed') tick = 'alert-circle';
+    else if (msg.status === 'read') tick = 'checkmark-done';
+    else tick = 'checkmark';
+  }
 
   return (
-    <Swipeable
-      ref={swipeableRef}
-      renderRightActions={() => (
-        <RightActions onDelete={handleDelete} theme={theme} />
-      )}
-      renderLeftActions={() => (
-        <LeftActions
-          onPin={handlePin}
-          onMute={handleMute}
-          isPinned={chat.isPinned}
-          isMuted={chat.isMuted}
-          theme={theme}
-        />
-      )}
-      overshootLeft={false}
-      overshootRight={false}
+    <Pressable
+      onPress={handlePress}
+      onLongPress={handleLongPress}
+      delayLongPress={350}
+      android_ripple={{ color: c.surfaceHighlight }}
+      style={({ pressed }) => [
+        styles.row,
+        { backgroundColor: c.background },
+        pressed && { backgroundColor: c.surfaceHighlight },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={chat.name}
     >
-      <TouchableOpacity
-        style={[
-          styles.row,
-          {
-            backgroundColor: theme.colors.surface,
-            paddingHorizontal: theme.spacing.lg,
-            paddingVertical: theme.spacing.md,
-          },
-        ]}
-        onPress={handlePress}
-        onLongPress={handleLongPress}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel={`${chat.name} chat`}
-        accessibilityHint="Opens the chat conversation"
-      >
-        {/* Avatar */}
-        <Avatar
-          uri={avatarUri}
-          name={chat.name}
-          size={52}
-          showOnline={isPrivate}
-          isOnline={chat.isOnline}
-          style={{ marginRight: theme.spacing.md }}
-        />
+      <Avatar
+        uri={avatarUri}
+        name={chat.name}
+        size={54}
+        showOnline={chat.type === 'private'}
+        isOnline={chat.isOnline}
+        style={styles.avatar}
+      />
 
-        {/* Content column */}
-        <View style={styles.content}>
-          {/* Top row: chat name + timestamp */}
-          <View style={styles.topRow}>
-            <Text
+      <View style={[styles.content, { borderBottomColor: c.border }]}>
+        <View style={styles.topRow}>
+          {chat.type === 'channel' ? (
+            <Ionicons name="megaphone" size={14} color={c.text} style={styles.typeIcon} />
+          ) : isGroup ? (
+            <Ionicons name="people" size={15} color={c.text} style={styles.typeIcon} />
+          ) : null}
+          <Text style={[styles.name, { color: c.text }]} numberOfLines={1}>
+            {chat.name}
+          </Text>
+          {chat.isMuted ? (
+            <Ionicons name="volume-mute" size={14} color={c.textTertiary} style={styles.muteIcon} />
+          ) : null}
+          <View style={styles.spacer} />
+          {tick ? (
+            <Ionicons
+              name={tick}
+              size={16}
+              color={msg?.status === 'failed' ? c.error : c.success}
+              style={styles.tick}
+            />
+          ) : null}
+          <Text style={[styles.time, { color: unread && !chat.isMuted ? c.primary : c.textSecondary }]}>
+            {formatChatTime(chat.updatedAt)}
+          </Text>
+        </View>
+
+        <View style={styles.bottomRow}>
+          <Text style={[styles.preview, { color: c.textSecondary }]} numberOfLines={1}>
+            {prefix ? <Text style={{ color: c.text }}>{prefix}: </Text> : null}
+            <Text style={chat.isTyping ? { color: c.primary } : undefined}>{preview}</Text>
+          </Text>
+
+          {chat.unreadCount > 0 ? (
+            <View
               style={[
-                theme.textStyles.chatName,
-                { color: theme.colors.text, flex: 1 },
+                styles.badge,
+                { backgroundColor: chat.isMuted ? c.textTertiary : c.unreadBadge },
               ]}
-              numberOfLines={1}
             >
-              {chat.name}
-            </Text>
-
-            <View style={styles.timestampGroup}>
-              {chat.isPinned && chat.unreadCount === 0 && (
-                <Ionicons
-                  name="pin"
-                  size={12}
-                  color={theme.colors.textTertiary}
-                  style={styles.pinIcon}
-                />
-              )}
-              <Text
-                style={[
-                  theme.textStyles.chatTimestamp,
-                  { color: theme.colors.textSecondary },
-                ]}
-              >
-                {timestamp}
+              <Text style={styles.badgeText} allowFontScaling={false}>
+                {chat.unreadCount > 999 ? `${Math.floor(chat.unreadCount / 1000)}K` : chat.unreadCount}
               </Text>
             </View>
-          </View>
-
-          {/* Bottom row: preview text + unread badge */}
-          <View style={styles.bottomRow}>
-            <Text
-              style={[
-                theme.textStyles.chatPreview,
-                {
-                  color: previewColor,
-                  fontStyle: preview.isTyping ? 'italic' : 'normal',
-                  flex: 1,
-                },
-              ]}
-              numberOfLines={1}
-            >
-              {preview.isVoice && '🎤 '}
-              {preview.isImage && '📷 '}
-              {preview.prefix}
-              {preview.text}
-            </Text>
-
-            {chat.unreadCount > 0 && (
-              <Badge
-                count={chat.unreadCount}
-                muted={chat.isMuted}
-                style={{ marginLeft: theme.spacing.sm }}
-              />
-            )}
-          </View>
+          ) : chat.isMarkedUnread ? (
+            <View style={[styles.badge, styles.dot, { backgroundColor: c.unreadBadge }]} />
+          ) : chat.isPinned ? (
+            <Ionicons name="pin" size={17} color={c.textTertiary} style={styles.pin} />
+          ) : null}
         </View>
-      </TouchableOpacity>
-    </Swipeable>
+      </View>
+    </Pressable>
   );
 });
 
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  row: { flexDirection: 'row', alignItems: 'center', paddingLeft: 12, height: 76 },
+  avatar: { marginRight: 12 },
   content: {
     flex: 1,
+    height: '100%',
     justifyContent: 'center',
+    paddingRight: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  topRow: {
-    flexDirection: 'row',
+  topRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  typeIcon: { marginRight: 4 },
+  name: { fontSize: 16.5, fontWeight: '600', flexShrink: 1 },
+  muteIcon: { marginLeft: 4 },
+  spacer: { flex: 1, minWidth: 8 },
+  tick: { marginRight: 3 },
+  time: { fontSize: 13 },
+  bottomRow: { flexDirection: 'row', alignItems: 'center' },
+  preview: { flex: 1, fontSize: 15 },
+  badge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 6,
     alignItems: 'center',
-    marginBottom: 3,
-  },
-  bottomRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  timestampGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    justifyContent: 'center',
     marginLeft: 8,
-    flexShrink: 0,
   },
-  pinIcon: {
-    marginRight: 3,
-  },
-  swipeContainer: {
-    flexDirection: 'row',
-  },
-  swipeAction: {
-    width: 80,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  swipeLabel: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
-  },
+  dot: { minWidth: 12, width: 12, height: 12, borderRadius: 6, paddingHorizontal: 0 },
+  badgeText: { color: '#FFFFFF', fontSize: 12.5, fontWeight: '700' },
+  pin: { marginLeft: 8, transform: [{ rotate: '45deg' }] },
 });
 
 export default ChatListItem;

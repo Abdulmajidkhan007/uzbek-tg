@@ -3,8 +3,7 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
-} from 'react-native';
+  TouchableOpacity, Image } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { StackScreenProps } from '@react-navigation/stack';
@@ -114,17 +113,19 @@ export function WelcomeScreen({ navigation }: Props): React.JSX.Element {
     <View style={styles.container}>
       <View style={styles.logoArea}>
         <Animated.View entering={FadeInDown.delay(100).springify()}>
-          <View style={styles.logoCircle} accessibilityLabel="Pulse app logo">
-            <Text style={styles.logoLetter}>P</Text>
-          </View>
+          <Image
+            source={require('../../../assets/icon.png')}
+            style={{ width: 120, height: 120 }}
+            accessibilityLabel="Uzbek TG"
+          />
         </Animated.View>
 
         <Animated.View entering={FadeInDown.delay(200).springify()}>
-          <Text style={styles.appName}>Pulse</Text>
+          <Text style={styles.appName}>Uzbek TG</Text>
         </Animated.View>
 
         <Animated.View entering={FadeInDown.delay(300).springify()}>
-          <Text style={styles.subtitle}>Fast. Private. Yours.</Text>
+          <Text style={styles.subtitle}>Tez. Xavfsiz. Qulay.</Text>
         </Animated.View>
       </View>
 
@@ -133,10 +134,10 @@ export function WelcomeScreen({ navigation }: Props): React.JSX.Element {
           style={styles.getStartedButton}
           onPress={handleGetStarted}
           activeOpacity={0.85}
-          accessibilityLabel="Get started with Pulse"
+          accessibilityLabel="Boshlash"
           accessibilityRole="button"
         >
-          <Text style={styles.getStartedText}>Get Started</Text>
+          <Text style={styles.getStartedText}>Boshlash</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -146,7 +147,7 @@ export function WelcomeScreen({ navigation }: Props): React.JSX.Element {
           accessibilityLabel="I already have an account, go to login"
           accessibilityRole="button"
         >
-          <Text style={styles.alreadyAccountText}>I already have an account</Text>
+          <Text style={styles.alreadyAccountText}>Akkauntim bor</Text>
         </TouchableOpacity>
 
         <Text style={styles.termsText}>

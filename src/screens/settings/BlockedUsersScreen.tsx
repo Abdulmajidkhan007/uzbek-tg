@@ -15,7 +15,7 @@ import { useTheme } from '@/hooks/useTheme';
 import Avatar from '@/components/common/Avatar';
 import EmptyState from '@/components/common/EmptyState';
 import Divider from '@/components/ui/Divider';
-import type { SettingsStackParamList } from '@/types';
+import type { SettingsStackParamList } from '@/navigation/types';
 import { loadBlockedUsers, setUserBlocked } from '@/services/tdlib/chats';
 import type { UserPreview } from '@/stores/chat.store';
 import { showAlert } from '@/components/ui/Dialog';

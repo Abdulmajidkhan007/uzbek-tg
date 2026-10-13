@@ -22,6 +22,8 @@ interface AuthState {
   codeSentVia: string;
   passwordHint: string;
   currentUser: AuthUser | null;
+  /** TDLib ulanish holati: sarlavhada "Ulanmoqda..." ko'rsatish uchun. */
+  connection: 'ready' | 'connecting' | 'updating' | 'waitingForNetwork';
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
@@ -38,6 +40,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   codeSentVia: '',
   passwordHint: '',
   currentUser: null,
+  connection: 'connecting',
   isAuthenticated: false,
   isLoading: true,
   error: null,
