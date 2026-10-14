@@ -109,10 +109,11 @@ export function Slider({
         const snapped = Math.round((raw - min) / step) * step + min;
         runOnJS(emit)(Math.min(Math.max(snapped, min), max));
       })
-      .onFinalize(() => {
+      .onFinalize((_e, success) => {
         const w = trackW.value;
         dragging.value = false;
-        if (w <= 0) return;
+        // Pan faollashmagan bo'lsa (oddiy bosish) — joyini Tap belgilaydi.
+        if (!success || w <= 0) return;
         const raw = min + (x.value / w) * (max - min);
         const snapped = Math.min(
           Math.max(Math.round((raw - min) / step) * step + min, min),

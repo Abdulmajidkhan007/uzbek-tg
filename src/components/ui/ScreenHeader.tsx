@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '@/hooks/useTheme';
+import { useT } from '@/i18n';
 
 /** Oddiy sarlavha: orqaga tugmasi + nom (+ ixtiyoriy o'ng tugma). */
 export function ScreenHeader({
@@ -14,10 +15,11 @@ export function ScreenHeader({
   right?: React.ReactNode;
 }): React.JSX.Element {
   const c = useTheme().colors;
+  const t = useT();
   return (
     <View style={[styles.header, { backgroundColor: c.surface }]}>
       {onBack ? (
-        <Pressable onPress={onBack} style={styles.back} accessibilityLabel="Orqaga" hitSlop={8}>
+        <Pressable onPress={onBack} style={styles.back} accessibilityLabel={t('common.back')} hitSlop={8}>
           <Ionicons name="arrow-back" size={24} color={c.text} />
         </Pressable>
       ) : null}

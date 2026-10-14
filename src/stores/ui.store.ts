@@ -58,7 +58,7 @@ export const DEFAULT_PREFS: Prefs = {
   accent: 'blue',
   messageFontSize: 16,
   bubbleRadius: 17,
-  wallpaper: { type: 'gradient', value: ['#0E1621', '#17212B'] },
+  wallpaper: { type: 'none' },
   chatListLines: 2,
   sendWithEnter: false,
   inAppSounds: true,
