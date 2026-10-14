@@ -1,3 +1,7 @@
+/**
+ * Xabar yozish paneli: javob/tahrirlash paneli, biriktirish, matn,
+ * yuborish yoki ovozli xabar (bosib turib yozish, chapga surib bekor qilish).
+ */
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
@@ -6,6 +10,8 @@ import {
   Text,
   StyleSheet,
   Platform,
+  PanResponder,
+  Animated as RNAnimated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -13,15 +19,19 @@ import * as Haptics from '@/utils/haptics';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
   withTiming,
   withRepeat,
   withSequence,
-  interpolate,
-  Extrapolation,
 } from 'react-native-reanimated';
 import { useTheme } from '@/hooks/useTheme';
-import { ChatMessage } from '@/stores/chat.store';
+import { useT } from '@/i18n';
+import { useUIStore } from '@/stores/ui.store';
+import type { ChatMessage } from '@/stores/chat.store';
+import { AppNative, type Recording } from '@/services/native';
+import { sendTyping, type OutgoingMedia } from '@/services/tdlib/chats';
+import { showAlert } from '@/components/ui/Dialog';
+import { openAttachSheet } from './AttachSheet';
+import { nameColor } from './chatFormat';
 
 // ---------------------------------------------------------------------------
 // Prop interface
@@ -29,403 +39,425 @@ import { ChatMessage } from '@/stores/chat.store';
 export interface MessageInputProps {
   chatId: string;
   replyingTo: ChatMessage | null;
+  /** Tahrirlanayotgan o'z xabari. */
+  editing?: ChatMessage | null;
+  placeholder?: string;
+  /** Boshlang'ich matn (qoralama). */
+  initialText?: string;
   onSendText: (text: string) => void;
-  onSendVoice: (uri: string, duration: number, waveform: number[]) => void;
-  onAttachmentPress: () => void;
+  onSendVoice?: (rec: Recording) => void;
+  /** Biriktirilgan fayllar; izoh — kiritilgan matn. */
+  onSendMedia?: (items: OutgoingMedia[], caption: string) => void;
   onCancelReply: () => void;
+  onCancelEdit?: () => void;
+  onTextChange?: (text: string) => void;
 }
 
 // ---------------------------------------------------------------------------
-// Reply preview bar
+// Reply / edit bar
 // ---------------------------------------------------------------------------
-function ReplyBar({
-  message,
-  onCancel,
-  primaryColor,
+function ContextBar({
+  icon,
+  title,
+  preview,
+  color,
   bgColor,
-  textColor,
   textSecondary,
+  onCancel,
 }: {
-  message: ChatMessage;
-  onCancel: () => void;
-  primaryColor: string;
+  icon: string;
+  title: string;
+  preview: string;
+  color: string;
   bgColor: string;
-  textColor: string;
   textSecondary: string;
+  onCancel: () => void;
 }) {
-  const senderName = `${message.senderPreview.firstName}${message.senderPreview.lastName ? ` ${message.senderPreview.lastName}` : ''}`;
-  const preview =
-    message.type === 'voice'
-      ? '🎤 Voice message'
-      : message.type === 'image'
-      ? '📷 Photo'
-      : message.text ?? '';
-
+  const tr = useT();
   return (
-    <View style={[replyBarStyles.container, { backgroundColor: bgColor, borderTopColor: primaryColor }]}>
-      <View style={[replyBarStyles.accent, { backgroundColor: primaryColor }]} />
-      <View style={replyBarStyles.textGroup}>
-        <Text style={[replyBarStyles.name, { color: primaryColor }]} numberOfLines={1}>
-          {senderName}
+    <View style={[barStyles.container, { backgroundColor: bgColor }]}>
+      <Ionicons name={icon} size={20} color={color} style={{ marginRight: 10 }} />
+      <View style={[barStyles.accent, { backgroundColor: color }]} />
+      <View style={barStyles.textGroup}>
+        <Text style={[barStyles.name, { color }]} numberOfLines={1}>
+          {title}
         </Text>
-        <Text style={[replyBarStyles.preview, { color: textSecondary }]} numberOfLines={1}>
+        <Text style={[barStyles.preview, { color: textSecondary }]} numberOfLines={1}>
           {preview}
         </Text>
       </View>
-      <Pressable
-        onPress={onCancel}
-        style={replyBarStyles.cancelButton}
-        accessibilityLabel="Cancel reply"
-        accessibilityRole="button"
-        hitSlop={8}
-      >
-        <Ionicons name="close" size={18} color={textSecondary} />
+      <Pressable onPress={onCancel} style={barStyles.cancelButton} accessibilityLabel={tr('chat.cancel')} accessibilityRole="button" hitSlop={8}>
+        <Ionicons name="close" size={20} color={textSecondary} />
       </Pressable>
     </View>
   );
 }
 
-const replyBarStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderTopWidth: 1,
-  },
-  accent: {
-    width: 3,
-    height: '100%',
-    borderRadius: 2,
-    marginRight: 8,
-    minHeight: 32,
-  },
-  textGroup: {
-    flex: 1,
-  },
-  name: {
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 1,
-  },
-  preview: {
-    fontSize: 13,
-  },
-  cancelButton: {
-    padding: 4,
-    marginLeft: 8,
-  },
+const barStyles = StyleSheet.create({
+  container: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6 },
+  accent: { width: 2, alignSelf: 'stretch', borderRadius: 1, marginRight: 8 },
+  textGroup: { flex: 1 },
+  name: { fontSize: 14, fontWeight: '700' },
+  preview: { fontSize: 14 },
+  cancelButton: { padding: 4, marginLeft: 8 },
 });
 
 // ---------------------------------------------------------------------------
-// Recording state UI
+// Recording UI
 // ---------------------------------------------------------------------------
 function RecordingBar({
   duration,
-  onCancel,
-  primaryColor,
+  levels,
+  slide,
   textColor,
   textSecondary,
+  tint,
 }: {
   duration: number;
-  onCancel: () => void;
-  primaryColor: string;
+  levels: number[];
+  slide: RNAnimated.Value;
   textColor: string;
   textSecondary: string;
+  tint: string;
 }) {
-  const pulseOpacity = useSharedValue(1);
-
+  const tr = useT();
+  const pulse = useSharedValue(1);
   useEffect(() => {
-    pulseOpacity.value = withRepeat(
-      withSequence(
-        withTiming(0.3, { duration: 600 }),
-        withTiming(1, { duration: 600 }),
-      ),
-      -1,
-      false,
-    );
-  }, [pulseOpacity]);
-
-  const pulseStyle = useAnimatedStyle(() => ({
-    opacity: pulseOpacity.value,
-  }));
-
-  const minutes = Math.floor(duration / 60);
-  const seconds = duration % 60;
-  const durationLabel = `${minutes}:${String(seconds).padStart(2, '0')}`;
-
+    pulse.value = withRepeat(withSequence(withTiming(0.25, { duration: 600 }), withTiming(1, { duration: 600 })), -1, false);
+  }, [pulse]);
+  const pulseStyle = useAnimatedStyle(() => ({ opacity: pulse.value }));
+  const sec = Math.floor(duration);
+  const label = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')},${Math.floor((duration % 1) * 10)}`;
   return (
     <View style={recordStyles.container}>
-      <Animated.View style={[recordStyles.dot, pulseStyle, { backgroundColor: '#FF5252' }]} />
-      <Text style={[recordStyles.duration, { color: textColor }]}>{durationLabel}</Text>
-      <Text style={[recordStyles.hint, { color: textSecondary }]}>Slide left to cancel</Text>
-      <Pressable
-        onPress={onCancel}
-        style={recordStyles.cancelButton}
-        accessibilityLabel="Cancel voice recording"
-        accessibilityRole="button"
-      >
-        <Ionicons name="close-circle" size={24} color="#FF5252" />
-      </Pressable>
+      <Animated.View style={[recordStyles.dot, pulseStyle]} />
+      <Text style={[recordStyles.duration, { color: textColor }]}>{label}</Text>
+      <View style={recordStyles.levels}>
+        {levels.map((v, i) => (
+          <View key={i} style={[recordStyles.level, { height: 3 + v * 20, backgroundColor: tint }]} />
+        ))}
+      </View>
+      <RNAnimated.View style={[recordStyles.hintBox, { transform: [{ translateX: slide }] }]}>
+        <Ionicons name="chevron-back" size={14} color={textSecondary} />
+        <Text style={[recordStyles.hint, { color: textSecondary }]} numberOfLines={1}>
+          {tr('chat.voice.slideToCancel')}
+        </Text>
+      </RNAnimated.View>
     </View>
   );
 }
 
 const recordStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    gap: 8,
-  },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  duration: {
-    fontSize: 15,
-    fontWeight: '500',
-    minWidth: 44,
-  },
-  hint: {
-    fontSize: 13,
-    flex: 1,
-  },
-  cancelButton: {
-    padding: 4,
-  },
+  container: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, minHeight: 40, gap: 8 },
+  dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#FF5252' },
+  duration: { fontSize: 15, fontWeight: '500', minWidth: 52 },
+  levels: { flexDirection: 'row', alignItems: 'center', gap: 2, width: 60, overflow: 'hidden' },
+  level: { width: 2, borderRadius: 1 },
+  hintBox: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  hint: { fontSize: 13 },
 });
+
+const CANCEL_DX = -110;
 
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 export default function MessageInput({
+  chatId,
   replyingTo,
+  editing,
+  placeholder,
+  initialText,
   onSendText,
   onSendVoice,
-  onAttachmentPress,
+  onSendMedia,
   onCancelReply,
+  onCancelEdit,
+  onTextChange,
 }: MessageInputProps) {
   const theme = useTheme();
+  const tr = useT();
   const insets = useSafeAreaInsets();
+  const sendWithEnter = useUIStore((s) => s.sendWithEnter);
+  const fontSize = useUIStore((s) => s.messageFontSize) || 16;
 
-  const [text, setText] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingDuration, setRecordingDuration] = useState(0);
-
-  const inputRef = useRef<TextInput>(null);
-  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [text, setText] = useState(initialText ?? '');
+  const [recording, setRecording] = useState(false);
+  const [recDuration, setRecDuration] = useState(0);
+  const [levels, setLevels] = useState<number[]>([]);
+  const [hint, setHint] = useState<string | null>(null);
   const hasText = text.trim().length > 0;
 
-  // Send-button slide-in animation
-  const sendButtonX = useSharedValue(hasText ? 0 : 32);
-  const sendButtonOpacity = useSharedValue(hasText ? 1 : 0);
-  const micButtonX = useSharedValue(hasText ? 32 : 0);
-  const micButtonOpacity = useSharedValue(hasText ? 0 : 1);
+  const inputRef = useRef<TextInput>(null);
+  const textRef = useRef(text);
+  textRef.current = text;
 
-  const sendButtonStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: sendButtonX.value }],
-    opacity: sendButtonOpacity.value,
-  }));
+  // Tahrirlash rejimiga kirganda matnni xabar matni bilan to'ldirish.
+  const prevEditing = useRef<string | null>(null);
+  useEffect(() => {
+    const id = editing?.id ?? null;
+    if (id === prevEditing.current) return;
+    if (editing) {
+      setText(editing.text ?? '');
+      setTimeout(() => inputRef.current?.focus(), 50);
+    } else if (prevEditing.current) {
+      setText('');
+    }
+    prevEditing.current = id;
+  }, [editing]);
 
-  const micButtonStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: micButtonX.value }],
-    opacity: micButtonOpacity.value,
-  }));
+  useEffect(() => {
+    if (replyingTo) setTimeout(() => inputRef.current?.focus(), 50);
+  }, [replyingTo]);
 
   const handleTextChange = useCallback(
     (value: string) => {
       setText(value);
-      const nowHasText = value.trim().length > 0;
-      if (nowHasText !== hasText) {
-        const springConfig = { damping: 18, stiffness: 300 };
-        sendButtonX.value = withSpring(nowHasText ? 0 : 32, springConfig);
-        sendButtonOpacity.value = withSpring(nowHasText ? 1 : 0, springConfig);
-        micButtonX.value = withSpring(nowHasText ? 32 : 0, springConfig);
-        micButtonOpacity.value = withSpring(nowHasText ? 0 : 1, springConfig);
-      }
+      onTextChange?.(value);
+      if (value.trim().length > 0 && !editing) sendTyping(chatId);
     },
-    [hasText, sendButtonX, sendButtonOpacity, micButtonX, micButtonOpacity],
+    [chatId, editing, onTextChange],
   );
 
   const handleSend = useCallback(() => {
-    const trimmed = text.trim();
+    const trimmed = textRef.current.trim();
     if (!trimmed) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onSendText(trimmed);
     setText('');
-    // Reset animation values
-    sendButtonX.value = withSpring(32, { damping: 18, stiffness: 300 });
-    sendButtonOpacity.value = withSpring(0, { damping: 18, stiffness: 300 });
-    micButtonX.value = withSpring(0, { damping: 18, stiffness: 300 });
-    micButtonOpacity.value = withSpring(1, { damping: 18, stiffness: 300 });
-  }, [text, onSendText, sendButtonX, sendButtonOpacity, micButtonX, micButtonOpacity]);
+    onTextChange?.('');
+  }, [onSendText, onTextChange]);
 
-  const startRecording = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsRecording(true);
-    setRecordingDuration(0);
-    recordingTimerRef.current = setInterval(() => {
-      setRecordingDuration((d) => d + 1);
-    }, 1000);
-  }, []);
-
-  const stopRecording = useCallback(() => {
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = null;
-    }
-    setIsRecording(false);
-    const duration = recordingDuration;
-    setRecordingDuration(0);
-    // In a real app the recorded URI would come from a native audio recorder; here we call the
-    // callback with a placeholder URI and a flat waveform.
-    if (duration > 0) {
-      const waveform = Array.from({ length: 32 }, () => Math.random());
-      onSendVoice('recording://local', duration, waveform);
-    }
-  }, [recordingDuration, onSendVoice]);
-
-  const cancelRecording = useCallback(() => {
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = null;
-    }
-    setIsRecording(false);
-    setRecordingDuration(0);
-  }, []);
-
-  const handleAttachmentPress = useCallback(() => {
+  const handleAttach = useCallback(() => {
+    if (!onSendMedia) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onAttachmentPress();
-  }, [onAttachmentPress]);
+    openAttachSheet((items) => {
+      onSendMedia(items, textRef.current.trim());
+      setText('');
+      onTextChange?.('');
+    });
+  }, [onSendMedia, onTextChange]);
 
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-      }
-    };
-  }, []);
+  // ----------------------------------------------------------------- ovoz
+  const recState = useRef<'idle' | 'starting' | 'recording'>('idle');
+  const pendingEnd = useRef<'none' | 'send' | 'cancel'>('none');
+  const startedAt = useRef(0);
+  const timers = useRef<ReturnType<typeof setInterval>[]>([]);
+  const slide = useRef(new RNAnimated.Value(0)).current;
+  const onSendVoiceRef = useRef(onSendVoice);
+  onSendVoiceRef.current = onSendVoice;
 
-  const barBg = theme.colors.inputBackground;
-  const borderTopColor = theme.colors.border;
+  const clearTimers = () => {
+    timers.current.forEach(clearInterval);
+    timers.current = [];
+  };
+
+  const showHint = (s: string) => {
+    setHint(s);
+    setTimeout(() => setHint(null), 1800);
+  };
+
+  const finish = useCallback(async (kind: 'send' | 'cancel') => {
+    clearTimers();
+    setRecording(false);
+    setLevels([]);
+    slide.setValue(0);
+    recState.current = 'idle';
+    const dur = (Date.now() - startedAt.current) / 1000;
+    if (kind === 'cancel' || dur < 0.8) {
+      AppNative.cancelRecording();
+      if (kind === 'send') showHint(tr('chat.voice.holdToRecord'));
+      else Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
+    try {
+      const rec = await AppNative.stopRecording();
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onSendVoiceRef.current?.(rec);
+    } catch (e) {
+      showAlert(tr('chat.voice.failed'), e instanceof Error ? e.message : String(e));
+    }
+  }, [slide, tr]);
+
+  const begin = useCallback(async () => {
+    if (recState.current !== 'idle') return;
+    recState.current = 'starting';
+    pendingEnd.current = 'none';
+    const has = await AppNative.hasMicPermission().catch(() => false);
+    if (!has) {
+      recState.current = 'idle';
+      const granted = await AppNative.requestMicPermission().catch(() => false);
+      if (!granted) showAlert(tr('chat.voice.permission'));
+      else showHint(tr('chat.voice.holdToRecord'));
+      return;
+    }
+    const ok = await AppNative.startRecording().catch(() => false);
+    if (!ok) {
+      recState.current = 'idle';
+      showAlert(tr('chat.voice.failed'));
+      return;
+    }
+    recState.current = 'recording';
+    startedAt.current = Date.now();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setRecording(true);
+    setRecDuration(0);
+    sendTyping(chatId, 'chatActionRecordingVoiceNote');
+    timers.current.push(
+      setInterval(() => setRecDuration((Date.now() - startedAt.current) / 1000), 100),
+      setInterval(() => {
+        AppNative.getAmplitude()
+          .then((a) => setLevels((prev) => [...prev.slice(-24), Math.max(0, Math.min(1, a))]))
+          .catch(() => undefined);
+      }, 100),
+      setInterval(() => sendTyping(chatId, 'chatActionRecordingVoiceNote'), 4500),
+    );
+    if (pendingEnd.current !== 'none') void finish(pendingEnd.current);
+  }, [chatId, finish, tr]);
+
+  const end = useCallback(
+    (kind: 'send' | 'cancel') => {
+      if (recState.current === 'recording') void finish(kind);
+      else if (recState.current === 'starting') pendingEnd.current = kind;
+    },
+    [finish],
+  );
+
+  const handlers = useRef({ begin, end });
+  handlers.current = { begin, end };
+
+  const pan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => void handlers.current.begin(),
+      onPanResponderMove: (_e, g) => {
+        if (recState.current !== 'idle') slide.setValue(Math.min(0, g.dx));
+        if (g.dx < CANCEL_DX) handlers.current.end('cancel');
+      },
+      onPanResponderRelease: () => handlers.current.end('send'),
+      onPanResponderTerminate: () => handlers.current.end('cancel'),
+    }),
+  ).current;
+
+  useEffect(
+    () => () => {
+      clearTimers();
+      if (recState.current !== 'idle') AppNative.cancelRecording();
+    },
+    [],
+  );
+
+  // ----------------------------------------------------------------- UI
+  const showSend = hasText || !!editing || !onSendVoice;
+  const replyName = replyingTo ? replyingTo.senderName || replyingTo.senderPreview.firstName : '';
 
   return (
     <View
       style={[
         styles.safeArea,
         {
-          backgroundColor: barBg,
+          backgroundColor: theme.colors.inputBackground,
           paddingBottom: insets.bottom,
-          borderTopColor,
-          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: theme.colors.border,
         },
       ]}
     >
-      {/* Reply preview */}
-      {replyingTo != null && !isRecording && (
-        <ReplyBar
-          message={replyingTo}
-          onCancel={onCancelReply}
-          primaryColor={theme.colors.primary}
-          bgColor={theme.colors.surfaceElevated}
-          textColor={theme.colors.text}
+      {editing ? (
+        <ContextBar
+          icon="pencil"
+          title={tr('chat.editing')}
+          preview={editing.text ?? ''}
+          color={theme.colors.primary}
+          bgColor={theme.colors.inputBackground}
           textSecondary={theme.colors.textSecondary}
+          onCancel={() => onCancelEdit?.()}
         />
-      )}
+      ) : replyingTo && !recording ? (
+        <ContextBar
+          icon="arrow-undo"
+          title={tr('chat.replyTo', { name: replyName })}
+          preview={replyingTo.previewText ?? replyingTo.text ?? ''}
+          color={nameColor(replyingTo.senderColorId, theme.isDark, theme.colors.primary)}
+          bgColor={theme.colors.inputBackground}
+          textSecondary={theme.colors.textSecondary}
+          onCancel={onCancelReply}
+        />
+      ) : null}
 
-      {/* Main input row */}
-      <View style={[styles.inputRow, { backgroundColor: barBg }]}>
-        {/* Attach button */}
-        {!isRecording && (
-          <Pressable
-            onPress={handleAttachmentPress}
-            style={styles.iconButton}
-            accessibilityLabel="Add attachment"
-            accessibilityRole="button"
-            accessibilityHint="Opens attachment picker"
-          >
-            <Ionicons
-              name="attach"
-              size={24}
-              color={theme.colors.textSecondary}
-              style={{ transform: [{ rotate: '45deg' }] }}
-            />
+      <View style={styles.inputRow}>
+        {!recording && onSendMedia && !editing ? (
+          <Pressable onPress={handleAttach} style={styles.iconButton} accessibilityLabel={tr('chat.attach')} accessibilityRole="button">
+            <Ionicons name="attach" size={26} color={theme.colors.textSecondary} style={{ transform: [{ rotate: '45deg' }] }} />
           </Pressable>
-        )}
+        ) : null}
 
-        {/* Text input or recording indicator */}
-        {isRecording ? (
+        {recording ? (
           <RecordingBar
-            duration={recordingDuration}
-            onCancel={cancelRecording}
-            primaryColor={theme.colors.primary}
+            duration={recDuration}
+            levels={levels}
+            slide={slide}
             textColor={theme.colors.text}
             textSecondary={theme.colors.textSecondary}
+            tint={theme.colors.primary}
           />
         ) : (
           <TextInput
             ref={inputRef}
             value={text}
             onChangeText={handleTextChange}
-            placeholder="Message..."
-            placeholderTextColor={theme.colors.textTertiary}
+            placeholder={hint ?? placeholder ?? tr('chat.messagePlaceholder')}
+            placeholderTextColor={hint ? theme.colors.primary : theme.colors.textTertiary}
             multiline
-            maxLength={4000}
+            maxLength={4096}
+            submitBehavior={sendWithEnter ? 'submit' : 'newline'}
+            returnKeyType={sendWithEnter ? 'send' : 'default'}
+            onSubmitEditing={sendWithEnter ? handleSend : undefined}
             style={[
               styles.textInput,
               {
                 color: theme.colors.text,
-                fontSize: theme.fontSizes.md,
-                maxHeight: theme.fontSizes.md * theme.lineHeights.relaxed * 5 + 24,
+                fontSize,
+                lineHeight: Math.round(fontSize * 1.3),
+                maxHeight: Math.round(fontSize * 1.3) * 6 + 20,
               },
             ]}
-            returnKeyType="default"
-            blurOnSubmit={false}
-            accessibilityLabel="Message input"
-            accessibilityHint="Type your message here"
+            accessibilityLabel={placeholder ?? tr('chat.messagePlaceholder')}
           />
         )}
 
-        {/* Send / Mic button */}
         <View style={styles.actionButtonContainer}>
-          {/* Mic button (shown when no text) */}
-          <Animated.View
-            style={[StyleSheet.absoluteFill, styles.actionButtonInner, micButtonStyle]}
-            pointerEvents={hasText || isRecording ? 'none' : 'auto'}
-          >
-            <Pressable
-              onLongPress={startRecording}
-              onPressOut={isRecording ? stopRecording : undefined}
-              delayLongPress={200}
-              style={[styles.roundButton, { backgroundColor: theme.colors.primary }]}
-              accessibilityLabel="Record voice message"
-              accessibilityRole="button"
-              accessibilityHint="Long press to record a voice message"
-            >
-              <Ionicons name="mic" size={20} color="#FFFFFF" />
-            </Pressable>
-          </Animated.View>
-
-          {/* Send button (shown when text present) */}
-          <Animated.View
-            style={[StyleSheet.absoluteFill, styles.actionButtonInner, sendButtonStyle]}
-            pointerEvents={hasText ? 'auto' : 'none'}
-          >
+          {showSend ? (
             <Pressable
               onPress={handleSend}
-              style={[styles.roundButton, { backgroundColor: theme.colors.primary }]}
-              accessibilityLabel="Send message"
+              disabled={!hasText}
+              style={[styles.roundButton, { backgroundColor: hasText ? theme.colors.primary : 'transparent' }]}
+              accessibilityLabel={tr('chat.send')}
               accessibilityRole="button"
-              accessibilityHint="Sends the typed message"
             >
-              <Ionicons name="send" size={18} color="#FFFFFF" style={{ marginLeft: 2 }} />
+              <Ionicons
+                name={editing ? 'checkmark' : 'send'}
+                size={editing ? 24 : 19}
+                color={hasText ? '#FFFFFF' : theme.colors.textTertiary}
+                style={editing ? undefined : { marginLeft: 3 }}
+              />
             </Pressable>
-          </Animated.View>
+          ) : (
+            <View
+              {...pan.panHandlers}
+              style={[
+                styles.roundButton,
+                recording && styles.micActive,
+                { backgroundColor: recording ? theme.colors.primary : 'transparent' },
+              ]}
+              accessibilityLabel={tr('chat.recordVoice')}
+              accessibilityRole="button"
+              accessibilityHint={tr('chat.voice.holdToRecord')}
+            >
+              <Ionicons name="mic" size={recording ? 28 : 24} color={recording ? '#FFFFFF' : theme.colors.textSecondary} />
+            </View>
+          )}
         </View>
       </View>
     </View>
@@ -436,47 +468,17 @@ export default function MessageInput({
 // Styles
 // ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
-  safeArea: {
-    width: '100%',
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    gap: 6,
-  },
-  iconButton: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 2,
-  },
+  safeArea: { width: '100%', borderTopWidth: StyleSheet.hairlineWidth },
+  inputRow: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 6, paddingVertical: 6, gap: 4 },
+  iconButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   textInput: {
     flex: 1,
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
     paddingTop: Platform.OS === 'ios' ? 10 : 8,
     paddingBottom: Platform.OS === 'ios' ? 10 : 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.07)',
     minHeight: 40,
-    lineHeight: 20,
   },
-  actionButtonContainer: {
-    width: 40,
-    height: 40,
-    marginBottom: 2,
-  },
-  actionButtonInner: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  roundButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  actionButtonContainer: { width: 44, height: 40, alignItems: 'center', justifyContent: 'center' },
+  roundButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  micActive: { width: 64, height: 64, borderRadius: 32, marginTop: -24, marginRight: -12 },
 });

@@ -15,14 +15,15 @@ import { useTheme } from '@/hooks/useTheme';
 import { useAuthStore } from '@/stores/auth.store';
 import { useChatStore } from '@/stores/chat.store';
 import Avatar from '@/components/common/Avatar';
+import { useT } from '@/i18n';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const TABS: Record<keyof MainTabParamList, { label: string; icon: string; iconOn: string }> = {
-  ChatsTab: { label: 'Chatlar', icon: 'chatbubbles-outline', iconOn: 'chatbubbles' },
-  ContactsTab: { label: 'Kontaktlar', icon: 'person-circle-outline', iconOn: 'person-circle' },
-  SettingsTab: { label: 'Sozlamalar', icon: 'settings-outline', iconOn: 'settings' },
-  ProfileTab: { label: 'Profil', icon: 'person-outline', iconOn: 'person' },
+  ChatsTab: { label: 'tabs.chats', icon: 'chatbubbles-outline', iconOn: 'chatbubbles' },
+  ContactsTab: { label: 'tabs.contacts', icon: 'person-circle-outline', iconOn: 'person-circle' },
+  SettingsTab: { label: 'tabs.settings', icon: 'settings-outline', iconOn: 'settings' },
+  ProfileTab: { label: 'tabs.profile', icon: 'person-outline', iconOn: 'person' },
 };
 
 /** Tab ichidagi stack'ning ildiz ekranlari — faqat shularda panel ko'rinadi. */
@@ -32,6 +33,7 @@ const ROOT_SCREENS = new Set(['ChatList', 'SettingsMain']);
 function FloatingTabBar({ state, navigation, insets }: BottomTabBarProps): React.JSX.Element | null {
   const theme = useTheme();
   const c = theme.colors;
+  const t = useT();
   const user = useAuthStore((s) => s.currentUser);
   const unread = useChatStore((s) => s.chats.filter((x) => x.unreadCount > 0 && !x.isMuted).length);
 
@@ -41,7 +43,15 @@ function FloatingTabBar({ state, navigation, insets }: BottomTabBarProps): React
 
   return (
     <View pointerEvents="box-none" style={[styles.wrap, { bottom: insets.bottom + 10 }]}>
-      <View style={[styles.bar, { backgroundColor: c.surfaceElevated }, theme.shadows.md]}>
+      <View
+        style={[
+          styles.bar,
+          theme.isDark
+            ? { backgroundColor: c.surfaceElevated }
+            : { backgroundColor: c.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.08)' },
+          theme.isDark ? theme.shadows.md : styles.lightShadow,
+        ]}
+      >
         {state.routes.map((route, i) => {
           const on = i === state.index;
           const meta = TABS[route.name as keyof MainTabParamList];
@@ -57,7 +67,7 @@ function FloatingTabBar({ state, navigation, insets }: BottomTabBarProps): React
               style={[styles.item, on && { backgroundColor: c.primary + '22' }]}
               accessibilityRole="tab"
               accessibilityState={{ selected: on }}
-              accessibilityLabel={meta.label}
+              accessibilityLabel={t(meta.label)}
             >
               <View>
                 {route.name === 'ProfileTab' && user ? (
@@ -68,13 +78,18 @@ function FloatingTabBar({ state, navigation, insets }: BottomTabBarProps): React
                   <Ionicons name={on ? meta.iconOn : meta.icon} size={24} color={color} />
                 )}
                 {route.name === 'ChatsTab' && unread > 0 ? (
-                  <View style={[styles.badge, { backgroundColor: c.unreadBadge, borderColor: c.surfaceElevated }]}>
+                  <View
+                    style={[
+                      styles.badge,
+                      { backgroundColor: c.unreadBadge, borderColor: theme.isDark ? c.surfaceElevated : c.surface },
+                    ]}
+                  >
                     <Text style={styles.badgeText}>{unread > 99 ? '99+' : unread}</Text>
                   </View>
                 ) : null}
               </View>
               <Text style={[styles.label, { color }]} numberOfLines={1}>
-                {meta.label}
+                {t(meta.label)}
               </Text>
             </Pressable>
           );
@@ -112,6 +127,13 @@ const styles = StyleSheet.create({
     borderRadius: 26,
   },
   label: { fontSize: 11.5, fontWeight: '600', marginTop: 2 },
+  lightShadow: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    elevation: 10,
+  },
   avatarRing: { borderWidth: 1.5, borderRadius: 14, padding: 0.5 },
   badge: {
     position: 'absolute',

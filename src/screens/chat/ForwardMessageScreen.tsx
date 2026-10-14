@@ -27,6 +27,8 @@ import { td } from '@/services/tdlib/client';
 import type { ChatStackParamList } from '@/navigation/types';
 import type { Chat } from '@/stores/chat.store';
 import { showAlert } from '@/components/ui/Dialog';
+import { useT } from '@/i18n';
+import { userStatusLabel } from '@/components/chat/chatFormat';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,6 +50,7 @@ const ForwardRow = React.memo(function ForwardRow({
   onToggle,
 }: ForwardRowProps) {
   const theme = useTheme();
+  const tr = useT();
 
   const handlePress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -55,22 +58,20 @@ const ForwardRow = React.memo(function ForwardRow({
   }, [chat.id, onToggle]);
 
   const subtitle = useMemo(() => {
-    if (chat.type === 'private') {
-      return chat.otherUser?.username ?? chat.otherUser?.status ?? '';
-    }
+    if (chat.type === 'private') return userStatusLabel(tr, chat.otherUser);
     if (chat.memberCount != null) {
-      if (chat.type === 'channel') return `${chat.memberCount.toLocaleString()} subscribers`;
-      return `${chat.memberCount} members`;
+      return chat.type === 'channel' ? tr.p('chat.subscribers', chat.memberCount) : tr.p('chat.members', chat.memberCount);
     }
     return '';
-  }, [chat]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat, tr.lang]);
 
   return (
     <TouchableOpacity
       onPress={handlePress}
       activeOpacity={0.7}
       accessibilityRole="button"
-      accessibilityLabel={`${isSelected ? 'Deselect' : 'Select'} ${chat.name}`}
+      accessibilityLabel={chat.name}
       accessibilityState={{ selected: isSelected }}
       style={[styles.row, { paddingHorizontal: theme.spacing.lg }]}
     >
@@ -152,6 +153,7 @@ const ForwardRow = React.memo(function ForwardRow({
 // ---------------------------------------------------------------------------
 export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.Element {
   const theme = useTheme();
+  const tr = useT();
   const { messageId, sourceChatId } = route.params;
 
   const searchInputRef = useRef<TextInput>(null);
@@ -188,16 +190,20 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
         await td({
           '@type': 'forwardMessages',
           chat_id: Number(id),
+          topic_id: null,
           from_chat_id: Number(sourceChatId),
           message_ids: [Number(messageId)],
+          options: null,
+          send_copy: false,
+          remove_caption: false,
         });
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       navigation.goBack();
     } catch (e) {
-      showAlert('Uzatilmadi', e instanceof Error ? e.message : String(e));
+      showAlert(tr('chat.forward.failed'), e instanceof Error ? e.message : String(e));
     }
-  }, [selectedIds, navigation, sourceChatId, messageId]);
+  }, [selectedIds, navigation, sourceChatId, messageId, tr]);
 
   const renderItem = useCallback(
     ({ item }: { item: Chat }) => (
@@ -219,12 +225,13 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
       <View style={styles.emptyWrapper}>
         <EmptyState
           icon="💬"
-          title="No chats found"
-          subtitle="Try a different search term."
+          title={tr('chat.forward.noChats')}
+          subtitle={tr('chat.forward.tryAnother')}
         />
       </View>
     ),
-    [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tr.lang],
   );
 
   const selectedCount = selectedIds.size;
@@ -250,7 +257,7 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
           activeOpacity={0.7}
           style={styles.headerBtn}
           accessibilityRole="button"
-          accessibilityLabel="Close"
+          accessibilityLabel={tr('common.close')}
         >
           <Ionicons name="close" size={24} color={theme.colors.primary} />
         </TouchableOpacity>
@@ -260,7 +267,7 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
             { color: theme.colors.text, flex: 1, textAlign: 'center' },
           ]}
         >
-          Forward to...
+          {tr('chat.forward.title')}
         </Text>
         <View style={styles.headerBtn} />
       </View>
@@ -296,7 +303,7 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
             ref={searchInputRef}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search chats..."
+            placeholder={tr('common.search')}
             placeholderTextColor={theme.colors.textTertiary}
             style={[
               styles.searchInput,
@@ -305,14 +312,14 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
             returnKeyType="search"
             autoCorrect={false}
             autoCapitalize="none"
-            accessibilityLabel="Search chats to forward to"
+            accessibilityLabel={tr('common.search')}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity
               onPress={() => setSearchQuery('')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityRole="button"
-              accessibilityLabel="Clear search"
+              accessibilityLabel={tr('common.close')}
             >
               <Ionicons name="close-circle" size={16} color={theme.colors.textTertiary} />
             </TouchableOpacity>
@@ -339,7 +346,7 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
               { color: theme.colors.primary, fontWeight: theme.fontWeights.semibold },
             ]}
           >
-            {selectedCount} chat{selectedCount > 1 ? 's' : ''} selected
+            {tr.p('chat.forward.selected', selectedCount)}
           </Text>
         </View>
       )}
@@ -375,11 +382,7 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
           activeOpacity={0.8}
           disabled={selectedCount === 0}
           accessibilityRole="button"
-          accessibilityLabel={
-            selectedCount === 0
-              ? 'Select at least one chat to forward'
-              : `Forward to ${selectedCount} chat${selectedCount > 1 ? 's' : ''}`
-          }
+          accessibilityLabel={selectedCount === 0 ? tr('chat.forward.selectChats') : tr('chat.forward.send', { n: selectedCount })}
           style={[
             styles.forwardBtn,
             {
@@ -404,9 +407,7 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
               },
             ]}
           >
-            {selectedCount > 0
-              ? `Forward (${selectedCount})`
-              : 'Select chats to forward'}
+            {selectedCount > 0 ? tr('chat.forward.send', { n: selectedCount }) : tr('chat.forward.selectChats')}
           </Text>
         </TouchableOpacity>
       </View>

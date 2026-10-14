@@ -17,12 +17,14 @@ import { useTheme } from '@/hooks/useTheme';
 import { useAuthStore } from '@/stores/auth.store';
 import { authErrorText, sendPassword } from '@/services/tdlib/auth';
 import * as Haptics from '@/utils/haptics';
+import { useT } from '@/i18n';
 
 type Props = StackScreenProps<AuthStackParamList, 'Password'>;
 
 /** Ikki bosqichli tekshiruv (2FA) paroli — authorizationStateWaitPassword. */
 export function PasswordScreen({ navigation }: Props): React.JSX.Element {
   const theme = useTheme();
+  const t = useT();
   const insets = useSafeAreaInsets();
   const hint = useAuthStore((s) => s.passwordHint);
   const [password, setPassword] = useState('');
@@ -79,15 +81,15 @@ export function PasswordScreen({ navigation }: Props): React.JSX.Element {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} accessibilityLabel="Orqaga">
+        <TouchableOpacity onPress={() => navigation.goBack()} accessibilityLabel={t('common.back')}>
           <Ionicons name="chevron-back" size={28} color={theme.colors.primary} />
         </TouchableOpacity>
       </View>
       <View style={styles.content}>
-        <Text style={styles.title}>Parol</Text>
+        <Text style={styles.title}>{t('main.password.title')}</Text>
         <Text style={styles.subtitle}>
-          Akkauntingizda ikki bosqichli tekshiruv yoqilgan. Telegram parolingizni kiriting.
-          {hint ? `\nEslatma: ${hint}` : ''}
+          {t('main.password.subtitle')}
+          {hint ? `\n${t('main.password.hint', { hint })}` : ''}
         </Text>
         <TextInput
           style={styles.input}
@@ -96,7 +98,7 @@ export function PasswordScreen({ navigation }: Props): React.JSX.Element {
             setPassword(v);
             setError('');
           }}
-          placeholder="Parol"
+          placeholder={t('main.password.placeholder')}
           placeholderTextColor={theme.colors.textTertiary}
           secureTextEntry
           autoFocus
@@ -110,7 +112,7 @@ export function PasswordScreen({ navigation }: Props): React.JSX.Element {
           {isLoading ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={styles.buttonText}>Davom etish</Text>
+            <Text style={styles.buttonText}>{t('common.continue')}</Text>
           )}
         </TouchableOpacity>
       </View>

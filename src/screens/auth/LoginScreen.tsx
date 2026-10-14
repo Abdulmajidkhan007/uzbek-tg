@@ -20,28 +20,37 @@ import type { StackScreenProps } from '@react-navigation/stack';
 import type { AuthStackParamList } from '@/navigation/types';
 import { useTheme } from '@/hooks/useTheme';
 import { showAlert } from '@/components/ui/Dialog';
+import { useT } from '@/i18n';
 
 type Props = StackScreenProps<AuthStackParamList, 'Login'>;
 
 interface Country {
   flag: string;
-  name: string;
+  /** Nomi tarjimadan: main.country.<code> */
   code: string;
   dialCode: string;
 }
 
 const COUNTRIES: Country[] = [
-  { flag: '🇺🇿', name: 'Uzbekistan', code: 'UZ', dialCode: '+998' },
-  { flag: '🇷🇺', name: 'Russia', code: 'RU', dialCode: '+7' },
-  { flag: '🇺🇸', name: 'USA', code: 'US', dialCode: '+1' },
-  { flag: '🇬🇧', name: 'UK', code: 'GB', dialCode: '+44' },
-  { flag: '🇩🇪', name: 'Germany', code: 'DE', dialCode: '+49' },
+  { flag: '🇺🇿', code: 'UZ', dialCode: '+998' },
+  { flag: '🇷🇺', code: 'RU', dialCode: '+7' },
+  { flag: '🇰🇿', code: 'KZ', dialCode: '+7' },
+  { flag: '🇰🇬', code: 'KG', dialCode: '+996' },
+  { flag: '🇹🇯', code: 'TJ', dialCode: '+992' },
+  { flag: '🇹🇲', code: 'TM', dialCode: '+993' },
+  { flag: '🇹🇷', code: 'TR', dialCode: '+90' },
+  { flag: '🇦🇪', code: 'AE', dialCode: '+971' },
+  { flag: '🇰🇷', code: 'KR', dialCode: '+82' },
+  { flag: '🇺🇸', code: 'US', dialCode: '+1' },
+  { flag: '🇬🇧', code: 'GB', dialCode: '+44' },
+  { flag: '🇩🇪', code: 'DE', dialCode: '+49' },
 ];
 
 const DEFAULT_COUNTRY = COUNTRIES[0] as Country;
 
 export function LoginScreen({ navigation }: Props): React.JSX.Element {
   const theme = useTheme();
+  const t = useT();
   const insets = useSafeAreaInsets();
   const [selectedCountry, setSelectedCountry] = useState<Country>(DEFAULT_COUNTRY);
   const [phoneNumber, setPhoneNumber] = useState<string>('');
@@ -80,11 +89,11 @@ export function LoginScreen({ navigation }: Props): React.JSX.Element {
       await sendPhoneNumber(fullPhone);
       navigation.navigate('OTP', { phone: fullPhone });
     } catch (e) {
-      showAlert('Kod yuborilmadi', authErrorText(e));
+      showAlert(t('main.login.sendFailed'), authErrorText(e));
     } finally {
       setIsLoading(false);
     }
-  }, [isNextEnabled, selectedCountry, phoneNumber, navigation]);
+  }, [isNextEnabled, selectedCountry, phoneNumber, navigation, t]);
 
   const styles = StyleSheet.create({
     flex: { flex: 1 },
@@ -260,12 +269,12 @@ export function LoginScreen({ navigation }: Props): React.JSX.Element {
           <TouchableOpacity
             style={styles.backButton}
             onPress={handleBack}
-            accessibilityLabel="Go back"
+            accessibilityLabel={t('common.back')}
             accessibilityRole="button"
           >
             <Ionicons name="chevron-back" size={24} color={theme.colors.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Your Phone</Text>
+          <Text style={styles.headerTitle}>{t('main.login.title')}</Text>
         </View>
 
         <ScrollView
@@ -275,18 +284,18 @@ export function LoginScreen({ navigation }: Props): React.JSX.Element {
           showsVerticalScrollIndicator={false}
         >
           <Text style={styles.subtitle}>
-            Please confirm your country code and enter your phone number
+            {t('main.login.subtitle')}
           </Text>
 
           <TouchableOpacity
             style={styles.countrySelector}
             onPress={handleCountryPress}
-            accessibilityLabel={`Selected country: ${selectedCountry.name} ${selectedCountry.dialCode}. Tap to change`}
+            accessibilityLabel={`${t(`main.country.${selectedCountry.code}`)} ${selectedCountry.dialCode}`}
             accessibilityRole="button"
           >
             <Text style={styles.countryFlag}>{selectedCountry.flag}</Text>
             <View style={styles.countryInfo}>
-              <Text style={styles.countryName}>{selectedCountry.name}</Text>
+              <Text style={styles.countryName}>{t(`main.country.${selectedCountry.code}`)}</Text>
               <Text style={styles.countryDialCode}>{selectedCountry.dialCode}</Text>
             </View>
             <Ionicons name="chevron-down" size={18} color={theme.colors.textSecondary} />
@@ -298,13 +307,13 @@ export function LoginScreen({ navigation }: Props): React.JSX.Element {
               style={styles.phoneInput}
               value={phoneNumber}
               onChangeText={setPhoneNumber}
-              placeholder="Phone number"
+              placeholder={t('main.login.phone')}
               placeholderTextColor={theme.colors.textTertiary}
               keyboardType="phone-pad"
               returnKeyType="done"
               onSubmitEditing={handleNext}
               autoFocus
-              accessibilityLabel="Phone number input"
+              accessibilityLabel={t('main.login.phone')}
               maxLength={15}
             />
           </View>
@@ -316,7 +325,7 @@ export function LoginScreen({ navigation }: Props): React.JSX.Element {
             ]}
             onPress={handleNext}
             disabled={!isNextEnabled}
-            accessibilityLabel="Next step"
+            accessibilityLabel={t('main.login.next')}
             accessibilityRole="button"
             accessibilityState={{ disabled: !isNextEnabled }}
           >
@@ -329,14 +338,14 @@ export function LoginScreen({ navigation }: Props): React.JSX.Element {
                   isNextEnabled ? styles.nextButtonTextActive : styles.nextButtonTextDisabled,
                 ]}
               >
-                Next
+                {t('main.login.next')}
               </Text>
             )}
           </TouchableOpacity>
 
           <View style={styles.securityNote}>
             <Ionicons name="lock-closed-outline" size={14} color={theme.colors.textTertiary} />
-            <Text style={styles.securityText}>We will send you a confirmation code</Text>
+            <Text style={styles.securityText}>{t('main.login.note')}</Text>
           </View>
         </ScrollView>
 
@@ -349,7 +358,8 @@ export function LoginScreen({ navigation }: Props): React.JSX.Element {
           <Pressable style={styles.modalOverlay} onPress={handleModalClose}>
             <Pressable style={styles.modalContainer} onPress={() => undefined}>
               <View style={styles.modalHandle} />
-              <Text style={styles.modalTitle}>Select Country</Text>
+              <Text style={styles.modalTitle}>{t('main.login.country')}</Text>
+              <ScrollView style={{ maxHeight: 420 }}>
               {COUNTRIES.map((country) => (
                 <TouchableOpacity
                   key={country.code}
@@ -358,18 +368,19 @@ export function LoginScreen({ navigation }: Props): React.JSX.Element {
                     selectedCountry.code === country.code && styles.countryRowSelected,
                   ]}
                   onPress={() => handleCountrySelect(country)}
-                  accessibilityLabel={`${country.name} ${country.dialCode}`}
+                  accessibilityLabel={`${t(`main.country.${country.code}`)} ${country.dialCode}`}
                   accessibilityRole="button"
                   accessibilityState={{ selected: selectedCountry.code === country.code }}
                 >
                   <Text style={styles.countryRowFlag}>{country.flag}</Text>
-                  <Text style={styles.countryRowName}>{country.name}</Text>
+                  <Text style={styles.countryRowName}>{t(`main.country.${country.code}`)}</Text>
                   <Text style={styles.countryRowCode}>{country.dialCode}</Text>
                   {selectedCountry.code === country.code && (
                     <Ionicons name="checkmark" size={18} color={theme.colors.primary} />
                   )}
                 </TouchableOpacity>
               ))}
+              </ScrollView>
             </Pressable>
           </Pressable>
         </Modal>

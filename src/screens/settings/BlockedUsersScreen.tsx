@@ -1,268 +1,140 @@
+/**
+ * Bloklangan foydalanuvchilar: getBlockedMessageSenders (loadBlockedUsers)
+ * va blokdan chiqarish (setUserBlocked).
+ */
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-} from 'react-native';
-import { FlashList } from '@shopify/flash-list';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Ionicons from 'react-native-vector-icons/Ionicons';
-import * as Haptics from '@/utils/haptics';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { StackScreenProps } from '@react-navigation/stack';
 
+import * as Haptics from '@/utils/haptics';
 import { useTheme } from '@/hooks/useTheme';
+import { useT } from '@/i18n';
 import Avatar from '@/components/common/Avatar';
 import EmptyState from '@/components/common/EmptyState';
-import Divider from '@/components/ui/Divider';
+import { SettingsCard } from '@/components/ui/SettingsRow';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { showAlert } from '@/components/ui/Dialog';
 import type { SettingsStackParamList } from '@/navigation/types';
 import { loadBlockedUsers, setUserBlocked } from '@/services/tdlib/chats';
 import type { UserPreview } from '@/stores/chat.store';
-import { showAlert } from '@/components/ui/Dialog';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 type Props = StackScreenProps<SettingsStackParamList, 'BlockedUsers'>;
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-interface BlockedUserRowProps {
-  user: UserPreview;
-  onUnblock: (userId: string) => void;
-  isLast: boolean;
+function fullName(u: UserPreview): string {
+  return `${u.firstName}${u.lastName ? ` ${u.lastName}` : ''}`.trim();
 }
 
-const BlockedUserRow = React.memo(function BlockedUserRow({
+function BlockedRow({
   user,
+  last,
   onUnblock,
-  isLast,
-}: BlockedUserRowProps) {
-  const theme = useTheme();
-
-  const fullName = `${user.firstName}${user.lastName ? ' ' + user.lastName : ''}`;
-
-  const handleUnblock = useCallback(() => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    showAlert(
-      'Unblock User',
-      `Unblock ${fullName}? They will be able to message you again.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Unblock',
-          style: 'destructive',
-          onPress: () => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            onUnblock(user.id);
-          },
-        },
-      ]
-    );
-  }, [user.id, fullName, onUnblock]);
-
+}: {
+  user: UserPreview;
+  last: boolean;
+  onUnblock: (u: UserPreview) => void;
+}): React.JSX.Element {
+  const c = useTheme().colors;
+  const t = useT();
+  const name = fullName(user);
   return (
-    <>
+    <View style={styles.row}>
+      <Avatar uri={user.avatarUrl} name={name || '?'} size={44} />
       <View
-        style={[
-          styles.row,
-          {
-            paddingHorizontal: theme.spacing.lg,
-            paddingVertical: theme.spacing.md,
-            backgroundColor: theme.colors.surfaceElevated,
-          },
-        ]}
+        style={[styles.rowBody, !last && { borderBottomColor: c.border, borderBottomWidth: StyleSheet.hairlineWidth }]}
       >
-        <Avatar uri={user.avatarUrl} name={fullName} size={46} />
-        <View style={[styles.userInfo, { marginLeft: theme.spacing.md }]}>
-          <Text
-            style={[
-              theme.textStyles.bodyMedium,
-              { color: theme.colors.text, fontWeight: theme.fontWeights.semibold },
-            ]}
-            numberOfLines={1}
-          >
-            {fullName}
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.name, { color: c.text }]} numberOfLines={1}>
+            {name}
           </Text>
-          {user.username != null && (
-            <Text
-              style={[
-                theme.textStyles.bodySmall,
-                { color: theme.colors.textSecondary, marginTop: 2 },
-              ]}
-              numberOfLines={1}
-            >
-              {user.username}
+          {user.username ? (
+            <Text style={[styles.username, { color: c.textSecondary }]} numberOfLines={1}>
+              @{user.username}
             </Text>
-          )}
+          ) : null}
         </View>
-        <TouchableOpacity
-          onPress={handleUnblock}
-          style={[
-            styles.unblockButton,
-            {
-              backgroundColor: theme.colors.error + '1A',
-              borderRadius: theme.radius.sm,
-              paddingVertical: theme.spacing.xs,
-              paddingHorizontal: theme.spacing.md,
-            },
-          ]}
+        <Pressable
+          onPress={() => onUnblock(user)}
+          hitSlop={6}
+          style={[styles.unblock, { backgroundColor: c.error + '1A' }]}
           accessibilityRole="button"
-          accessibilityLabel={`Unblock ${fullName}`}
         >
-          <Text
-            style={[
-              theme.textStyles.bodySmall,
-              { color: theme.colors.error, fontWeight: theme.fontWeights.semibold },
-            ]}
-          >
-            Unblock
-          </Text>
-        </TouchableOpacity>
+          <Text style={[styles.unblockText, { color: c.error }]}>{t('settings.blocked.unblock')}</Text>
+        </Pressable>
       </View>
-      {!isLast && <Divider inset={theme.spacing.lg + 46 + theme.spacing.md} />}
-    </>
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Screen
-// ---------------------------------------------------------------------------
-export function BlockedUsersScreen({ navigation }: Props): React.JSX.Element {
-  const theme = useTheme();
-  const insets = useSafeAreaInsets();
-
-  const [blockedUsers, setBlockedUsers] = useState<UserPreview[]>([]);
-
-  useEffect(() => {
-    loadBlockedUsers().then(setBlockedUsers).catch(() => setBlockedUsers([]));
-  }, []);
-
-  const handleUnblock = useCallback((userId: string) => {
-    setBlockedUsers((prev) => prev.filter((u) => u.id !== userId));
-    void setUserBlocked(userId, false);
-  }, []);
-
-  const renderItem = useCallback(
-    ({ item, index }: { item: UserPreview; index: number }) => (
-      <BlockedUserRow
-        user={item}
-        onUnblock={handleUnblock}
-        isLast={index === blockedUsers.length - 1}
-      />
-    ),
-    [handleUnblock, blockedUsers.length]
-  );
-
-  const keyExtractor = useCallback((item: UserPreview) => item.id, []);
-
-  return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: insets.top + theme.spacing.sm,
-            paddingBottom: theme.spacing.md,
-            paddingHorizontal: theme.spacing.lg,
-            backgroundColor: theme.colors.background,
-            borderBottomColor: theme.colors.border,
-          },
-        ]}
-      >
-        <TouchableOpacity
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            navigation.goBack();
-          }}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <Ionicons name="chevron-back" size={26} color={theme.colors.primary} />
-        </TouchableOpacity>
-        <Text
-          style={[
-            theme.textStyles.headingSmall,
-            { color: theme.colors.text, flex: 1, marginLeft: theme.spacing.sm },
-          ]}
-        >
-          Blocked Users
-        </Text>
-        <Text
-          style={[
-            theme.textStyles.bodySmall,
-            { color: theme.colors.textSecondary },
-          ]}
-        >
-          {blockedUsers.length}
-        </Text>
-      </View>
-
-      {blockedUsers.length === 0 ? (
-        <EmptyState
-          icon="🚫"
-          title="No Blocked Users"
-          subtitle="Users you block won't be able to message you"
-        />
-      ) : (
-        <FlashList
-          data={blockedUsers}
-          renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          contentContainerStyle={{
-            paddingHorizontal: theme.spacing.lg,
-            paddingTop: theme.spacing.xl,
-            paddingBottom: insets.bottom + theme.spacing.xxxl,
-          }}
-          ListHeaderComponent={
-            <View
-              style={{
-                backgroundColor: theme.colors.surfaceElevated,
-                borderRadius: theme.radius.md,
-                overflow: 'hidden',
-                marginBottom: theme.spacing.sm,
-              }}
-            />
-          }
-          ItemSeparatorComponent={null}
-          showsVerticalScrollIndicator={false}
-          getItemType={() => 'blocked-user'}
-        />
-      )}
     </View>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
+export function BlockedUsersScreen({ navigation }: Props): React.JSX.Element {
+  const c = useTheme().colors;
+  const t = useT();
+  const [users, setUsers] = useState<UserPreview[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    loadBlockedUsers()
+      .then((u) => {
+        setUsers(u);
+        setError(null);
+      })
+      .catch((e: Error) => setError(e.message));
+  }, []);
+
+  useEffect(load, [load]);
+
+  const unblock = useCallback(
+    (u: UserPreview) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      showAlert(t('settings.blocked.unblock'), t('settings.blocked.unblockConfirm', { name: fullName(u) }), [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('settings.blocked.unblock'),
+          style: 'destructive',
+          onPress: () => {
+            setUsers((prev) => prev?.filter((x) => x.id !== u.id) ?? prev);
+            setUserBlocked(u.id, false).catch((e: Error) => {
+              showAlert(t('common.error'), e.message);
+              load();
+            });
+          },
+        },
+      ]);
+    },
+    [t, load],
+  );
+
+  return (
+    <SafeAreaView style={[styles.root, { backgroundColor: c.background }]} edges={['top']}>
+      <ScreenHeader title={t('settings.blocked.title')} onBack={() => navigation.goBack()} />
+      {users === null ? (
+        error ? (
+          <Text style={[styles.error, { color: c.error }]}>{`${t('settings.privacy.loadError')}: ${error}`}</Text>
+        ) : (
+          <ActivityIndicator style={{ marginTop: 40 }} color={c.primary} />
+        )
+      ) : users.length === 0 ? (
+        <EmptyState icon="🚫" title={t('settings.blocked.empty')} subtitle={t('settings.blocked.emptySub')} />
+      ) : (
+        <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+          <SettingsCard footer={t('settings.blocked.footer')}>
+            {users.map((u, i) => (
+              <BlockedRow key={u.id} user={u} last={i === users.length - 1} onUnblock={unblock} />
+            ))}
+          </SettingsCard>
+        </ScrollView>
+      )}
+    </SafeAreaView>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 64,
-  },
-  userInfo: {
-    flex: 1,
-  },
-  unblockButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  root: { flex: 1 },
+  error: { margin: 24, fontSize: 15 },
+  row: { flexDirection: 'row', alignItems: 'center', paddingLeft: 14 },
+  rowBody: { flex: 1, flexDirection: 'row', alignItems: 'center', minHeight: 64, marginLeft: 14, paddingRight: 14 },
+  name: { fontSize: 16, fontWeight: '500' },
+  username: { fontSize: 14, marginTop: 2 },
+  unblock: { borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12, marginLeft: 8 },
+  unblockText: { fontSize: 14, fontWeight: '600' },
 });

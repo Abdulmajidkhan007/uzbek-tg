@@ -1,6 +1,8 @@
 package org.uzbektg.app
 
+import android.content.Intent
 import android.os.Bundle
+import org.uzbektg.app.nativeapi.AppNativeModule
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
@@ -20,6 +22,18 @@ class MainActivity : ReactActivity() {
    */
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(null)
+  }
+
+  /** Bildirishnoma bosilganda (ilova ochiq bo'lsa) — chatni ochish. */
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    AppNativeModule.instance?.handleIntent(intent)
+  }
+
+  override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    AppNativeModule.onPermissionResult(requestCode, grantResults)
   }
 
   /**

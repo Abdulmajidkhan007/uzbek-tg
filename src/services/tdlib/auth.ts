@@ -8,6 +8,7 @@ import { onTdUpdate, resetTdlib, startTdlib, td, TdError } from './client';
 import type { TdAuthState, TdObject, TdUser } from './types';
 import { startChatSync, stopChatSync } from './chats';
 import { fileUri, onFilesChanged, requestFile } from './files';
+import { t } from '@/i18n';
 
 const STATE_MAP: Record<string, TdAuthState> = {
   authorizationStateWaitTdlibParameters: 'loading',
@@ -24,11 +25,15 @@ const STATE_MAP: Record<string, TdAuthState> = {
   authorizationStateClosed: 'closed',
 };
 
+/** Kod qayerga yuborilgani (OTP ekrani shu kalit bo'yicha matn tanlaydi). */
 const CODE_TYPE_LABEL: Record<string, string> = {
   authenticationCodeTypeTelegramMessage: 'Telegram',
   authenticationCodeTypeSms: 'SMS',
-  authenticationCodeTypeCall: "qo'ng'iroq",
-  authenticationCodeTypeFlashCall: "qo'ng'iroq",
+  authenticationCodeTypeSmsWord: 'SMS',
+  authenticationCodeTypeSmsPhrase: 'SMS',
+  authenticationCodeTypeCall: 'call',
+  authenticationCodeTypeFlashCall: 'call',
+  authenticationCodeTypeMissedCall: 'call',
   authenticationCodeTypeFragment: 'Fragment',
 };
 
@@ -156,12 +161,14 @@ export async function startAuth(): Promise<void> {
 export function authErrorText(e: unknown): string {
   if (!(e instanceof TdError)) return String(e);
   const m = e.message;
-  if (m.includes('PHONE_NUMBER_INVALID')) return "Telefon raqami noto'g'ri";
-  if (m.includes('PHONE_CODE_INVALID')) return "Kod noto'g'ri";
-  if (m.includes('PHONE_CODE_EXPIRED')) return 'Kod eskirgan, qayta yuboring';
-  if (m.includes('PASSWORD_HASH_INVALID')) return "Parol noto'g'ri";
-  if (m.includes('FLOOD_WAIT') || e.code === 429) return "Juda ko'p urinish. Birozdan keyin qayta urinib ko'ring";
-  if (m.includes('PHONE_NUMBER_BANNED')) return 'Bu raqam Telegram tomonidan bloklangan';
+  if (m.includes('PHONE_NUMBER_INVALID')) return t('main.authErr.phoneInvalid');
+  if (m.includes('PHONE_CODE_INVALID')) return t('main.authErr.codeInvalid');
+  if (m.includes('PHONE_CODE_EXPIRED')) return t('main.authErr.codeExpired');
+  if (m.includes('PASSWORD_HASH_INVALID')) return t('main.authErr.passwordInvalid');
+  if (m.includes('FLOOD_WAIT') || e.code === 429) return t('main.authErr.flood');
+  if (m.includes('PHONE_NUMBER_BANNED')) return t('main.authErr.banned');
+  if (m.includes('FIRSTNAME_INVALID')) return t('main.authErr.firstNameInvalid');
+  if (/network|connection/i.test(m)) return t('main.authErr.network');
   return m;
 }
 

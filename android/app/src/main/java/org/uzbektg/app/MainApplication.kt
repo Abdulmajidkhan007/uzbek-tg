@@ -6,6 +6,7 @@ import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
+import org.uzbektg.app.nativeapi.AppNativePackage
 import org.uzbektg.app.tdlib.TdlibPackage
 
 class MainApplication : Application(), ReactApplication {
@@ -16,6 +17,7 @@ class MainApplication : Application(), ReactApplication {
       packageList =
         PackageList(this).packages.apply {
           add(TdlibPackage())
+          add(AppNativePackage())
         },
     )
   }

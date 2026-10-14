@@ -1,47 +1,32 @@
+import { useMemo } from 'react';
 import { useColorScheme } from 'react-native';
-import { darkTheme, lightTheme, AppTheme, ThemeMode } from '@/theme';
+import { darkTheme, lightTheme, type AppTheme } from '@/theme';
+import { ACCENTS } from '@/theme/accents';
+import { useUIStore } from '@/stores/ui.store';
 
-/**
- * Shape expected from the UI store. Defined here so the hook compiles before
- * the store module is created; the real store must satisfy this interface.
- */
-interface UIStoreState {
-  themeMode: ThemeMode;
-}
-
-type UIStoreSelector<T> = (state: UIStoreState) => T;
-type UIStoreHook = <T>(selector: UIStoreSelector<T>) => T;
-
-// Lazily resolved so the module can be imported before the store exists.
-let _useUIStore: UIStoreHook | undefined;
-
-function getUIStore(): UIStoreHook | undefined {
-  if (_useUIStore !== undefined) return _useUIStore;
-  try {
-    // Dynamic require keeps this hook compilable before @/stores/ui.store exists.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = require('@/stores/ui.store') as { useUIStore: UIStoreHook };
-    _useUIStore = mod.useUIStore;
-    return _useUIStore;
-  } catch {
-    return undefined;
-  }
-}
-
+/** Joriy mavzu: qorong'i/yorug' + tanlangan asosiy rang. */
 export function useTheme(): AppTheme {
   const systemScheme = useColorScheme();
-  const useUIStore = getUIStore();
+  const themeMode = useUIStore((s) => s.themeMode);
+  const accent = useUIStore((s) => s.accent);
 
-  // When the store is unavailable (e.g. during initial bootstrap) fall back to
-  // the system colour scheme, defaulting to dark.
-  if (useUIStore === undefined) {
-    return systemScheme === 'light' ? lightTheme : darkTheme;
-  }
+  const isDark = themeMode === 'dark' || (themeMode === 'system' && systemScheme !== 'light');
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const themeMode = useUIStore((s: UIStoreState) => s.themeMode);
-
-  if (themeMode === 'dark') return darkTheme;
-  if (themeMode === 'light') return lightTheme;
-  return systemScheme === 'light' ? lightTheme : darkTheme;
+  return useMemo(() => {
+    const base = isDark ? darkTheme : lightTheme;
+    if (accent === 'blue') return base;
+    const a = ACCENTS[accent];
+    const main = isDark ? a.dark : a.light;
+    return {
+      ...base,
+      colors: {
+        ...base.colors,
+        primary: main,
+        tabBarActive: main,
+        unreadBadge: main,
+        link: main,
+        messageBubbleOutgoing: isDark ? a.bubbleDark : a.bubbleLight,
+      },
+    };
+  }, [isDark, accent]);
 }

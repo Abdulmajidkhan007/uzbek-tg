@@ -2,10 +2,11 @@
  * Sozlamalar (Telegram uslubi): markazda avatar, ism, telefon • @username,
  * pastda rangli ikonkali bo'limlar.
  */
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useFocusEffect } from '@react-navigation/native';
 import type { StackScreenProps } from '@react-navigation/stack';
 
 import { useTheme } from '@/hooks/useTheme';
@@ -16,6 +17,9 @@ import Avatar from '@/components/common/Avatar';
 import { SettingsCard, SettingsRow } from '@/components/ui/SettingsRow';
 import type { SettingsStackParamList } from '@/navigation/types';
 import { showAlert } from '@/components/ui/Dialog';
+import { toggleThemeAnimated } from '@/components/ui/ThemeReveal';
+import { LANGUAGES, useT } from '@/i18n';
+import { getSessions } from '@/services/tdlib/settings';
 
 type Props = StackScreenProps<SettingsStackParamList, 'SettingsMain'>;
 
@@ -29,28 +33,39 @@ export function formatPhone(phone: string | undefined): string {
   return `+${d}`;
 }
 
-const THEME_LABEL: Record<string, string> = { dark: "Qorong'i", light: "Yorug'", system: 'Tizim' };
-
 export function SettingsScreen({ navigation }: Props): React.JSX.Element {
   const theme = useTheme();
   const c = theme.colors;
+  const t = useT();
   const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.currentUser);
   const logout = useAuthStore((s) => s.logout);
   const themeMode = useUIStore((s) => s.themeMode);
+  const language = useUIStore((s) => s.language);
   const folderCount = useChatStore((s) => s.folders.length);
+  const [sessionsCount, setSessionsCount] = useState<number | null>(null);
+
+  // Qurilmalar soni — har safar ekranga qaytganda yangilanadi.
+  useFocusEffect(
+    useCallback(() => {
+      getSessions()
+        .then((r) => setSessionsCount(r.sessions.length))
+        .catch(() => undefined);
+    }, []),
+  );
 
   const name = user ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ''}` : '';
   const sub = [formatPhone(user?.phone), user?.username ? `@${user.username}` : '']
     .filter(Boolean)
     .join(' • ');
+  const langName = LANGUAGES.find((l) => l.code === language)?.native;
 
   const handleLogout = useCallback(() => {
-    showAlert('Chiqish', 'Akkauntdan chiqmoqchimisiz? Qayta kirish uchun Telegram kodi kerak bo\'ladi.', [
-      { text: 'Bekor qilish', style: 'cancel' },
-      { text: 'Chiqish', style: 'destructive', onPress: () => void logout() },
+    showAlert(t('settings.main.logout'), t('settings.main.logoutConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('settings.main.logout'), style: 'destructive', onPress: () => void logout() },
     ]);
-  }, [logout]);
+  }, [logout, t]);
 
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
@@ -58,9 +73,16 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
         <View style={styles.topBar}>
           <View style={{ flex: 1 }} />
           <Pressable
+            onPress={(e) => void toggleThemeAnimated(e.nativeEvent.pageX, e.nativeEvent.pageY)}
+            style={styles.topBtn}
+            accessibilityLabel={t('settings.main.toggleTheme')}
+          >
+            <Ionicons name={theme.isDark ? 'sunny-outline' : 'moon-outline'} size={23} color={c.text} />
+          </Pressable>
+          <Pressable
             onPress={() => navigation.navigate('EditProfile')}
             style={styles.topBtn}
-            accessibilityLabel="Tahrirlash"
+            accessibilityLabel={t('settings.main.edit')}
           >
             <Ionicons name="create-outline" size={23} color={c.text} />
           </Pressable>
@@ -75,78 +97,73 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
         </View>
 
         <SettingsCard>
-          <SettingsRow icon="person" color="#E5574F" label="Akkaunt" onPress={() => navigation.navigate('EditProfile')} />
+          <SettingsRow
+            icon="person"
+            color="#E5574F"
+            label={t('settings.main.account')}
+            onPress={() => navigation.navigate('EditProfile')}
+          />
           <SettingsRow
             icon="chatbubble"
             color="#3E9BEA"
-            label="Chat sozlamalari"
-            value={THEME_LABEL[themeMode]}
-            onPress={() => navigation.navigate('ThemeSettings')}
+            label={t('settings.main.chatSettings')}
+            value={t(`settings.theme.${themeMode}`)}
+            onPress={() => navigation.navigate('ChatSettings')}
           />
           <SettingsRow
             icon="lock-closed"
             color="#5DBB5A"
-            label="Maxfiylik va xavfsizlik"
+            label={t('settings.main.privacy')}
             onPress={() => navigation.navigate('PrivacySettings')}
           />
           <SettingsRow
             icon="notifications"
             color="#EF5350"
-            label="Bildirishnomalar"
+            label={t('settings.main.notifications')}
             onPress={() => navigation.navigate('NotificationSettings')}
           />
           <SettingsRow
             icon="pie-chart"
             color="#4CAF50"
-            label="Ma'lumotlar va xotira"
-            onPress={() => navigation.navigate('Storage')}
+            label={t('settings.main.dataStorage')}
+            onPress={() => navigation.navigate('DataStorage')}
           />
           <SettingsRow
             icon="folder"
             color="#3E9BEA"
-            label="Chat papkalari"
+            label={t('settings.main.folders')}
             value={folderCount > 0 ? String(folderCount) : undefined}
             onPress={() => navigation.navigate('ChatFolders')}
           />
           <SettingsRow
             icon="phone-portrait"
             color="#F59B2B"
-            label="Qurilmalar"
+            label={t('settings.main.devices')}
+            value={sessionsCount === null ? undefined : String(sessionsCount)}
             onPress={() => navigation.navigate('Sessions')}
           />
           <SettingsRow
             icon="globe"
             color="#9C6ADE"
-            label="Til"
-            value="O'zbekcha"
+            label={t('settings.main.language')}
+            value={langName}
             last
-            onPress={() => showAlert('Til', "Hozircha ilova faqat o'zbek tilida.")}
+            onPress={() => navigation.navigate('Language')}
           />
         </SettingsCard>
 
         <SettingsCard>
-          <SettingsRow
-            icon="ban"
-            color="#8E99A4"
-            label="Bloklanganlar"
-            onPress={() => navigation.navigate('BlockedUsers')}
-          />
           <SettingsRow
             icon="information-circle"
             color="#3E9BEA"
-            label="Uzbek TG haqida"
+            label={t('settings.main.about')}
             last
-            onPress={() =>
-              showAlert(
-                'Uzbek TG',
-                "Telegram uchun norasmiy mijoz. Rasmiy TDLib kutubxonasi asosida ishlaydi, akkauntingiz Telegram serverlarida qoladi.",
-              )
-            }
+            onPress={() => showAlert('Uzbek TG', t('settings.main.aboutText'))}
           />
         </SettingsCard>
 
         <SettingsCard>
-          <SettingsRow icon="log-out" label="Chiqish" danger last onPress={handleLogout} />
+          <SettingsRow icon="log-out" label={t('settings.main.logout')} danger last onPress={handleLogout} />
         </SettingsCard>
       </ScrollView>
     </View>

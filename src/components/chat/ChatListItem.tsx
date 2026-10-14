@@ -10,6 +10,9 @@ import { format, isToday, isThisWeek, isThisYear } from 'date-fns';
 import { useTheme } from '@/hooks/useTheme';
 import Avatar from '@/components/common/Avatar';
 import type { Chat } from '@/stores/chat.store';
+import { useAuthStore } from '@/stores/auth.store';
+import { useUIStore } from '@/stores/ui.store';
+import { currentLang, shortMonths, shortWeekdays, useT, type Lang } from '@/i18n';
 
 export interface ChatListItemProps {
   chat: Chat;
@@ -18,14 +21,12 @@ export interface ChatListItemProps {
   currentUserId?: string;
 }
 
-const WEEKDAYS = ['Yak', 'Dush', 'Sesh', 'Chor', 'Pay', 'Jum', 'Shan'];
-const MONTHS = ['yan', 'fev', 'mar', 'apr', 'may', 'iyn', 'iyl', 'avg', 'sen', 'okt', 'noy', 'dek'];
-
-export function formatChatTime(date: Date): string {
+/** Bugun — HH:mm, shu hafta — hafta kuni, shu yil — "14 okt", aks holda dd.MM.yy. */
+export function formatChatTime(date: Date, lang: Lang = currentLang()): string {
   if (date.getTime() === 0) return '';
   if (isToday(date)) return format(date, 'HH:mm');
-  if (isThisWeek(date, { weekStartsOn: 1 })) return WEEKDAYS[date.getDay()] ?? '';
-  if (isThisYear(date)) return `${date.getDate()}-${MONTHS[date.getMonth()]}`;
+  if (isThisWeek(date, { weekStartsOn: 1 })) return shortWeekdays(lang)[date.getDay()] ?? '';
+  if (isThisYear(date)) return `${date.getDate()} ${shortMonths(lang)[date.getMonth()] ?? ''}`;
   return format(date, 'dd.MM.yy');
 }
 
@@ -37,6 +38,12 @@ const ChatListItem = React.memo(function ChatListItem({
 }: ChatListItemProps) {
   const theme = useTheme();
   const c = theme.colors;
+  const t = useT();
+  const myId = useAuthStore((s) => s.currentUser?.id);
+  const lines = useUIStore((s) => s.chatListLines);
+  // O'zi bilan chat — Telegram'dagi "Saqlangan xabarlar".
+  const isSaved = chat.type === 'private' && myId != null && chat.otherUser?.id === myId;
+  const title = isSaved ? t('main.savedMessages') : chat.name;
 
   const handlePress = useCallback(() => onPress(chat.id), [onPress, chat.id]);
   const handleLongPress = useCallback(() => onLongPress?.(chat.id), [onLongPress, chat.id]);
@@ -47,11 +54,11 @@ const ChatListItem = React.memo(function ChatListItem({
 
   let prefix = '';
   if (msg && !chat.isTyping) {
-    if (isOwn && chat.type !== 'channel') prefix = 'Siz';
+    if (isOwn && chat.type !== 'channel' && !isSaved) prefix = t('main.you');
     else if (isGroup && msg.senderPreview.firstName) prefix = msg.senderPreview.firstName;
   }
   const preview = chat.isTyping
-    ? `${chat.typingUserName ?? 'yozmoqda'}...`
+    ? `${chat.typingUserName ?? ''}...`
     : msg
     ? msg.previewText ?? msg.text ?? ''
     : '';
@@ -75,20 +82,26 @@ const ChatListItem = React.memo(function ChatListItem({
       android_ripple={{ color: c.surfaceHighlight }}
       style={({ pressed }) => [
         styles.row,
-        { backgroundColor: c.background },
+        { backgroundColor: theme.isDark ? c.background : c.surface, height: lines === 3 ? 88 : 76 },
         pressed && { backgroundColor: c.surfaceHighlight },
       ]}
       accessibilityRole="button"
-      accessibilityLabel={chat.name}
+      accessibilityLabel={title}
     >
-      <Avatar
-        uri={avatarUri}
-        name={chat.name}
-        size={54}
-        showOnline={chat.type === 'private'}
-        isOnline={chat.isOnline}
-        style={styles.avatar}
-      />
+      {isSaved ? (
+        <View style={[styles.avatar, styles.savedAvatar, { backgroundColor: c.primary }]}>
+          <Ionicons name="bookmark" size={24} color="#FFFFFF" />
+        </View>
+      ) : (
+        <Avatar
+          uri={avatarUri}
+          name={chat.name}
+          size={54}
+          showOnline={chat.type === 'private'}
+          isOnline={chat.isOnline}
+          style={styles.avatar}
+        />
+      )}
 
       <View style={[styles.content, { borderBottomColor: c.border }]}>
         <View style={styles.topRow}>
@@ -98,7 +111,7 @@ const ChatListItem = React.memo(function ChatListItem({
             <Ionicons name="people" size={15} color={c.text} style={styles.typeIcon} />
           ) : null}
           <Text style={[styles.name, { color: c.text }]} numberOfLines={1}>
-            {chat.name}
+            {title}
           </Text>
           {chat.isMuted ? (
             <Ionicons name="volume-mute" size={14} color={c.textTertiary} style={styles.muteIcon} />
@@ -113,12 +126,15 @@ const ChatListItem = React.memo(function ChatListItem({
             />
           ) : null}
           <Text style={[styles.time, { color: unread && !chat.isMuted ? c.primary : c.textSecondary }]}>
-            {formatChatTime(chat.updatedAt)}
+            {formatChatTime(chat.updatedAt, t.lang)}
           </Text>
         </View>
 
-        <View style={styles.bottomRow}>
-          <Text style={[styles.preview, { color: c.textSecondary }]} numberOfLines={1}>
+        <View style={[styles.bottomRow, lines === 3 && styles.bottomRowTall]}>
+          <Text
+            style={[styles.preview, { color: c.textSecondary }, lines === 3 && styles.previewTall]}
+            numberOfLines={lines === 3 ? 2 : 1}
+          >
             {prefix ? <Text style={{ color: c.text }}>{prefix}: </Text> : null}
             <Text style={chat.isTyping ? { color: c.primary } : undefined}>{preview}</Text>
           </Text>
@@ -163,7 +179,10 @@ const styles = StyleSheet.create({
   tick: { marginRight: 3 },
   time: { fontSize: 13 },
   bottomRow: { flexDirection: 'row', alignItems: 'center' },
+  bottomRowTall: { alignItems: 'flex-start' },
   preview: { flex: 1, fontSize: 15 },
+  previewTall: { lineHeight: 20 },
+  savedAvatar: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center' },
   badge: {
     minWidth: 22,
     height: 22,

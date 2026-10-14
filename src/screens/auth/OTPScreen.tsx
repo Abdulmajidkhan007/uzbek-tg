@@ -25,6 +25,15 @@ import type { AuthStackParamList } from '@/navigation/types';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuthStore } from '@/stores/auth.store';
 import { authErrorText, resendCode, sendCode } from '@/services/tdlib/auth';
+import { useT } from '@/i18n';
+
+/** auth.ts'dagi codeSentVia kaliti → tarjima kaliti. */
+const SENT_VIA_KEY: Record<string, string> = {
+  Telegram: 'main.otp.sentTelegram',
+  SMS: 'main.otp.sentSms',
+  call: 'main.otp.sentCall',
+  Fragment: 'main.otp.sentFragment',
+};
 
 type Props = StackScreenProps<AuthStackParamList, 'OTP'>;
 
@@ -80,6 +89,7 @@ export function OTPScreen({ navigation, route }: Props): React.JSX.Element {
   const codeSentVia = useAuthStore((s) => s.codeSentVia);
   const tdState = useAuthStore((s) => s.tdState);
   const theme = useTheme();
+  const t = useT();
   const insets = useSafeAreaInsets();
 
   const [digits, setDigits] = useState<string[]>(Array(OTP_LENGTH).fill(''));
@@ -232,13 +242,13 @@ export function OTPScreen({ navigation, route }: Props): React.JSX.Element {
     hasVerified.current = false;
     startCountdown();
     resendCode().then(
-      () => showToast('Kod qayta yuborildi'),
+      () => showToast(t('main.otp.resent')),
       (e) => showToast(authErrorText(e)),
     );
     setTimeout(() => {
       inputRefs.current[0]?.focus();
     }, 100);
-  }, [isResendActive, startCountdown, showToast]);
+  }, [isResendActive, startCountdown, showToast, t]);
 
   useEffect(() => {
     if (tdState === 'waitPassword') navigation.replace('Password');
@@ -379,19 +389,17 @@ export function OTPScreen({ navigation, route }: Props): React.JSX.Element {
           <TouchableOpacity
             style={styles.backButton}
             onPress={handleBack}
-            accessibilityLabel="Go back"
+            accessibilityLabel={t('common.back')}
             accessibilityRole="button"
           >
             <Ionicons name="chevron-back" size={24} color={theme.colors.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Enter Code</Text>
+          <Text style={styles.headerTitle}>{t('main.otp.title')}</Text>
         </View>
 
         <View style={styles.content}>
           <Text style={styles.subtitle}>
-            {codeSentVia === 'Telegram'
-              ? 'Kod boshqa qurilmangizdagi Telegram ilovasiga yuborildi'
-              : `Kod ${codeSentVia || 'SMS'} orqali yuborildi`}
+            {t(SENT_VIA_KEY[codeSentVia] ?? 'main.otp.sentSms')}
             {phone ? ': ' : ''}
             <Text style={styles.phoneHighlight}>{phone}</Text>
           </Text>
@@ -421,7 +429,7 @@ export function OTPScreen({ navigation, route }: Props): React.JSX.Element {
                 maxLength={2}
                 caretHidden
                 autoFocus={index === 0}
-                accessibilityLabel={`OTP digit ${index + 1} of ${OTP_LENGTH}`}
+                accessibilityLabel={`${t('main.otp.title')} ${index + 1}/${OTP_LENGTH}`}
               />
             </View>
           ))}
@@ -450,14 +458,13 @@ export function OTPScreen({ navigation, route }: Props): React.JSX.Element {
             {isResendActive ? (
               <TouchableOpacity
                 onPress={handleResend}
-                accessibilityLabel="Resend verification code"
                 accessibilityRole="button"
               >
-                <Text style={styles.resendLink}>Resend Code</Text>
+                <Text style={styles.resendLink}>{t('main.otp.resend')}</Text>
               </TouchableOpacity>
             ) : (
               <Text style={styles.resendCountdown}>
-                Resend code in {countdown}s
+                {t('main.otp.resendIn', { n: countdown })}
               </Text>
             )}
           </View>

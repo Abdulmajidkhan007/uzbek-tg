@@ -12,14 +12,85 @@ export interface UserPreview {
   avatarUrl?: string;
   status: 'online' | 'offline' | 'recently' | 'last_seen';
   isVerified: boolean;
+  /** userStatusOffline.was_online (unix soniya). */
+  wasOnline?: number;
+  /** status 'offline' bo'lganda aniqroq: o'tgan hafta / oy / uzoq vaqt. */
+  statusDetail?: 'lastWeek' | 'lastMonth' | 'longAgo';
+  isBot?: boolean;
+  /** Ism rangi (Telegram accent_color_id, 0..6 asosiy ranglar). */
+  colorId?: number;
 }
 
 export interface MessageReply {
   messageId: string;
+  /** Javob berilgan xabar chati (boshqa chatdan bo'lishi mumkin). */
+  chatId?: string;
   senderId: string;
   senderName: string;
   contentPreview: string;
   type: MessageType;
+  /** Iqtibos (textQuote) — bo'lsa preview o'rniga ko'rsatiladi. */
+  quote?: string;
+  colorId?: number;
+  /** Javob berilgan xabar hali yuklanmagan. */
+  isLoading?: boolean;
+}
+
+/** formattedText.entities → UI uchun soddalashtirilgan. */
+export interface TextEntity {
+  offset: number;
+  length: number;
+  /** textEntityType* nomidan 'textEntityType' qismi olib tashlangan: 'Bold', 'TextUrl', ... */
+  type: string;
+  url?: string;
+  userId?: string;
+  language?: string;
+}
+
+export type InlineButtonKind =
+  | 'url'
+  | 'loginUrl'
+  | 'webApp'
+  | 'callback'
+  | 'callbackWithPassword'
+  | 'callbackGame'
+  | 'switchInline'
+  | 'buy'
+  | 'user'
+  | 'copyText'
+  | 'disabled'
+  | 'unknown';
+
+export interface InlineButton {
+  text: string;
+  kind: InlineButtonKind;
+  url?: string;
+  /** Callback ma'lumoti (base64 bytes — TDLib'ga o'zgarishsiz qaytariladi). */
+  data?: string;
+  userId?: string;
+  copyText?: string;
+  query?: string;
+}
+
+export interface PollInfo {
+  id: string;
+  question: string;
+  questionEntities?: TextEntity[];
+  options: { id: string; text: string; voterCount: number; percent: number; isChosen: boolean; isBeingChosen: boolean }[];
+  totalVoters: number;
+  isClosed: boolean;
+  isAnonymous: boolean;
+  isQuiz: boolean;
+  allowsMultiple: boolean;
+  /** Ovoz berilgan (yoki natijalarni ko'rish mumkin). */
+  hasVoted: boolean;
+}
+
+export interface LinkPreviewInfo {
+  url: string;
+  siteName?: string;
+  title?: string;
+  description?: string;
 }
 
 export interface Reaction {
@@ -58,6 +129,40 @@ export interface ChatMessage {
   mediaHeight?: number;
   /** TDLib fayl id — to'liq faylni yuklab olish/ijro uchun. */
   mediaFileId?: number;
+  /** To'liq fayl lokal yo'li (yuklab bo'lingan bo'lsa, file:// siz). */
+  mediaLocalPath?: string;
+  mimeType?: string;
+  /** Yuklab olish / yuborish jarayoni (0..1). */
+  downloadProgress?: number;
+  uploadProgress?: number;
+  /** Rasm avto-yuklanmadi — xira thumb + yuklab olish tugmasi. */
+  needsDownload?: boolean;
+
+  /** Matn (yoki izoh) formatlash belgilari. */
+  entities?: TextEntity[];
+  /** Xizmat xabari (a'zo qo'shildi, xabar qadaldi, ...) — markazda pill. */
+  isService?: boolean;
+  isChannelPost?: boolean;
+  /** Kanal posti ko'rishlar soni. */
+  viewCount?: number;
+  /** Izohlar (kanal muhokama guruhi) — reply_info bo'lsa. */
+  hasComments?: boolean;
+  replyCount?: number;
+  isEdited?: boolean;
+  authorSignature?: string;
+  /** "Forwarded from X" — X nomi. */
+  forwardFrom?: string;
+  /** Inline tugmalar qatorlari. */
+  replyMarkup?: InlineButton[][];
+  poll?: PollInfo;
+  contact?: { name: string; phone: string; userId?: string };
+  location?: { latitude: number; longitude: number; title?: string; address?: string };
+  /** Dice / animatsiyali emoji — katta qilib ko'rsatiladi. */
+  bigEmoji?: string;
+  linkPreview?: LinkPreviewInfo;
+  /** Ism rangi (guruhlarda). */
+  senderColorId?: number;
+  senderName?: string;
 }
 
 export interface Chat {

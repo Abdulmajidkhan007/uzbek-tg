@@ -14,7 +14,6 @@ import {
   ScrollView,
   NativeSyntheticEvent,
   NativeScrollEvent,
-  Share,
   StatusBar,
   Image,
   ActivityIndicator,
@@ -39,6 +38,9 @@ import type { StackScreenProps } from '@react-navigation/stack';
 import { useTheme } from '@/hooks/useTheme';
 import Video from 'react-native-video';
 import { downloadFileNow } from '@/services/tdlib/files';
+import { AppNative } from '@/services/native';
+import { showAlert } from '@/components/ui/Dialog';
+import { useT } from '@/i18n';
 import type { ChatStackParamList } from '@/navigation/types';
 
 // ---------------------------------------------------------------------------
@@ -212,7 +214,33 @@ export function MediaPreviewScreen({ route, navigation }: Props): React.JSX.Elem
   const mediaUrls = !isVideo && localUri ? [localUri] : initialUrls;
 
   const theme = useTheme();
+  const tr = useT();
   const scrollRef = useRef<ScrollView>(null);
+  const [busy, setBusy] = useState<'save' | 'share' | null>(null);
+
+  // Galereyaga saqlash / ulashish: to'liq fayl yuklangandan keyin.
+  const handleFileAction = useCallback(
+    async (action: 'save' | 'share') => {
+      if (!localUri) return;
+      const path = localUri.replace(/^file:\/\//, '');
+      const mime = isVideoKind(kind) ? 'video/mp4' : 'image/jpeg';
+      setBusy(action);
+      try {
+        if (action === 'save') {
+          const ok = await AppNative.saveToGallery(path, mime);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          showAlert(ok ? tr('chat.savedToGallery') : tr('chat.saveFailed'));
+        } else {
+          await AppNative.shareFile(path, mime);
+        }
+      } catch (e) {
+        showAlert(tr('chat.actionFailed'), e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(null);
+      }
+    },
+    [localUri, kind, tr],
+  );
 
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
@@ -283,7 +311,7 @@ export function MediaPreviewScreen({ route, navigation }: Props): React.JSX.Elem
                     <Image source={{ uri: initialUrls[0] }} style={StyleSheet.absoluteFill} resizeMode="contain" blurRadius={4} />
                   ) : null}
                   {loadError ? (
-                    <Text style={{ color: '#FFFFFF' }}>Video yuklab olinmadi</Text>
+                    <Text style={{ color: '#FFFFFF' }}>{tr('chat.media.loadFailed')}</Text>
                   ) : (
                     <ActivityIndicator color="#FFFFFF" size="large" />
                   )}
@@ -301,7 +329,7 @@ export function MediaPreviewScreen({ route, navigation }: Props): React.JSX.Elem
                   onPress={toggleHeader}
                   style={StyleSheet.absoluteFill}
                   accessibilityRole="button"
-                  accessibilityLabel="Toggle controls"
+                  accessibilityLabel={title}
                 >
                   <View style={styles.imagePage}>
                     <ZoomableImage uri={uri} onDoubleTap={toggleHeader} />
@@ -332,7 +360,7 @@ export function MediaPreviewScreen({ route, navigation }: Props): React.JSX.Elem
                 activeOpacity={0.7}
                 style={styles.headerBtn}
                 accessibilityRole="button"
-                accessibilityLabel="Close media preview"
+                accessibilityLabel={tr('common.close')}
               >
                 <Ionicons name="close" size={26} color="#FFFFFF" />
               </TouchableOpacity>
@@ -359,7 +387,30 @@ export function MediaPreviewScreen({ route, navigation }: Props): React.JSX.Elem
                 )}
               </View>
 
-              {/* Saqlash/ulashish keyinroq (galereyaga yozish kutubxonasi kerak). */}
+              {fileId != null ? (
+                <View style={styles.headerActions}>
+                  <TouchableOpacity
+                    onPress={() => void handleFileAction('share')}
+                    disabled={!localUri || busy !== null}
+                    style={[styles.headerBtn, !localUri && { opacity: 0.4 }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={tr('common.share')}
+                  >
+                    {busy === 'share' ? <ActivityIndicator color="#FFFFFF" /> : <Ionicons name="share-social-outline" size={22} color="#FFFFFF" />}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => void handleFileAction('save')}
+                    disabled={!localUri || busy !== null}
+                    style={[styles.headerBtn, !localUri && { opacity: 0.4 }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={tr('chat.saveToGallery')}
+                  >
+                    {busy === 'save' ? <ActivityIndicator color="#FFFFFF" /> : <Ionicons name="download-outline" size={23} color="#FFFFFF" />}
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.headerBtn} />
+              )}
             </View>
           </SafeAreaView>
         </Animated.View>
@@ -376,6 +427,10 @@ export function MediaPreviewScreen({ route, navigation }: Props): React.JSX.Elem
       </View>
     </GestureHandlerRootView>
   );
+}
+
+function isVideoKind(kind: string | undefined): boolean {
+  return kind === 'video';
 }
 
 // ---------------------------------------------------------------------------

@@ -1,42 +1,52 @@
-import React, {
-  useEffect,
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+/**
+ * Kontaktlar (Telegram uslubi): TDLib getContacts ro'yxati, harf bo'yicha
+ * bo'limlar, qidiruv va har bir kontaktning haqiqiy "oxirgi marta" holati
+ * (userStatus* — updateUserStatus orqali jonli yangilanadi).
+ */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
+  ActivityIndicator,
+  Pressable,
   SectionList,
-  SectionListData,
+  type SectionListData,
+  StyleSheet,
+  Text,
   TextInput,
   TouchableOpacity,
-  Platform,
-  Share,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withSpring,
-} from 'react-native-reanimated';
+import { format, isToday, isYesterday } from 'date-fns';
 import * as Haptics from '@/utils/haptics';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 
 import { useTheme } from '@/hooks/useTheme';
+import { useT, type Translator } from '@/i18n';
 import Avatar from '@/components/common/Avatar';
 import EmptyState from '@/components/common/EmptyState';
-import Divider from '@/components/ui/Divider';
 import { loadContacts, openPrivateChat } from '@/services/tdlib/chats';
+import { onTdUpdate, td } from '@/services/tdlib/client';
+import type { TdObject, TdUser } from '@/services/tdlib/types';
+import type { MainTabParamList } from '@/navigation/types';
+import type { UserPreview } from '@/stores/chat.store';
+
+type NavProp = BottomTabNavigationProp<MainTabParamList>;
+
+/** TDLib userStatus* (faqat kerakli maydonlar). */
+interface TdStatus {
+  '@type': string;
+  was_online?: number;
+}
 
 interface ContactSection {
   letter: string;
   data: UserPreview[];
+}
+
+function fullName(u: UserPreview): string {
+  return `${u.firstName}${u.lastName ? ` ${u.lastName}` : ''}`;
 }
 
 function toSections(list: UserPreview[]): ContactSection[] {
@@ -45,244 +55,155 @@ function toSections(list: UserPreview[]): ContactSection[] {
     const letter = (c.firstName.charAt(0) || '#').toUpperCase();
     map.set(letter, [...(map.get(letter) ?? []), c]);
   }
-  return [...map.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([letter, data]) => ({ letter, data }));
+  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([letter, data]) => ({ letter, data }));
 }
-import type { MainTabParamList } from '@/navigation/types';
-import type { UserPreview } from '@/stores/chat.store';
+
+/** Telegram'dagi kabi "oxirgi marta" matni. */
+export function statusText(t: Translator, s: TdStatus | undefined, isBot?: boolean): string {
+  if (isBot) return t('main.status.bot');
+  switch (s?.['@type']) {
+    case 'userStatusOnline':
+      return t('common.online');
+    case 'userStatusRecently':
+      return t('main.status.recently');
+    case 'userStatusLastWeek':
+      return t('main.status.withinWeek');
+    case 'userStatusLastMonth':
+      return t('main.status.withinMonth');
+    case 'userStatusOffline': {
+      if (!s.was_online) return t('main.status.longAgo');
+      const d = new Date(s.was_online * 1000);
+      const time = format(d, 'HH:mm');
+      if (isToday(d)) return t('main.status.at', { time });
+      if (isYesterday(d)) return t('main.status.yesterdayAt', { time });
+      return t('main.status.date', { date: format(d, 'dd.MM.yy') });
+    }
+    default:
+      return t('main.status.longAgo');
+  }
+}
 
 // ---------------------------------------------------------------------------
-// Types
+// Qator
 // ---------------------------------------------------------------------------
-type NavProp = BottomTabNavigationProp<MainTabParamList>;
 
-// ---------------------------------------------------------------------------
-// Contact row sub-component
-// ---------------------------------------------------------------------------
-interface ContactRowProps {
+const ContactRow = React.memo(function ContactRow({
+  contact,
+  status,
+  isBot,
+  onPress,
+}: {
   contact: UserPreview;
+  status?: TdStatus;
+  isBot?: boolean;
   onPress: (contact: UserPreview) => void;
-}
-
-const ContactRow = React.memo(function ContactRow({ contact, onPress }: ContactRowProps) {
+}) {
   const theme = useTheme();
-
-  const handlePress = useCallback(() => {
-    onPress(contact);
-  }, [contact, onPress]);
-
-  const fullName = `${contact.firstName}${contact.lastName ? ` ${contact.lastName}` : ''}`;
-  const statusLabel =
-    contact.status === 'online'
-      ? 'Online'
-      : contact.status === 'recently'
-      ? 'Recently'
-      : contact.username ?? '';
-
+  const c = theme.colors;
+  const t = useT();
+  const name = fullName(contact);
+  const online = status?.['@type'] === 'userStatusOnline';
   return (
-    <TouchableOpacity
-      onPress={handlePress}
-      activeOpacity={0.7}
+    <Pressable
+      onPress={() => onPress(contact)}
+      android_ripple={{ color: c.surfaceHighlight }}
+      style={styles.row}
       accessibilityRole="button"
-      accessibilityLabel={`Open chat with ${fullName}`}
-      style={[styles.contactRow, { paddingHorizontal: theme.spacing.lg }]}
+      accessibilityLabel={name}
     >
-      <Avatar
-        uri={contact.avatarUrl}
-        name={fullName}
-        size={44}
-        showOnline
-        isOnline={contact.status === 'online'}
-      />
-      <View style={styles.contactInfo}>
-        <Text
-          style={[
-            theme.textStyles.chatName,
-            { color: theme.colors.text },
-          ]}
-          numberOfLines={1}
-        >
-          {fullName}
-          {contact.isVerified && (
-            <Text style={{ color: theme.colors.primary }}> ✓</Text>
-          )}
+      <Avatar uri={contact.avatarUrl} name={name} size={46} showOnline isOnline={online} />
+      <View style={[styles.rowBody, { borderBottomColor: c.border }]}>
+        <Text style={[styles.name, { color: c.text }]} numberOfLines={1}>
+          {name}
         </Text>
-        {statusLabel.length > 0 && (
-          <Text
-            style={[
-              theme.textStyles.bodySmall,
-              {
-                color:
-                  contact.status === 'online'
-                    ? theme.colors.secondary
-                    : theme.colors.textSecondary,
-              },
-            ]}
-            numberOfLines={1}
-          >
-            {statusLabel}
-          </Text>
-        )}
+        <Text style={[styles.status, { color: online ? c.primary : c.textSecondary }]} numberOfLines={1}>
+          {status || isBot ? statusText(t, status, isBot) : ' '}
+        </Text>
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 });
 
 // ---------------------------------------------------------------------------
-// Section header sub-component
+// Ekran
 // ---------------------------------------------------------------------------
-interface SectionHeaderProps {
-  letter: string;
-}
 
-const SectionHeader = React.memo(function SectionHeader({ letter }: SectionHeaderProps) {
-  const theme = useTheme();
-  return (
-    <View
-      style={[
-        styles.sectionHeader,
-        {
-          backgroundColor: theme.colors.background,
-          paddingHorizontal: theme.spacing.lg,
-          paddingVertical: theme.spacing.xs,
-        },
-      ]}
-    >
-      <Text
-        style={[
-          theme.textStyles.bodySmall,
-          {
-            color: theme.colors.primary,
-            fontWeight: theme.fontWeights.semibold,
-          },
-        ]}
-      >
-        {letter}
-      </Text>
-    </View>
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Section index strip
-// ---------------------------------------------------------------------------
-interface SectionIndexProps {
-  letters: string[];
-  onLetterPress: (letter: string) => void;
-}
-
-const SectionIndex = React.memo(function SectionIndex({
-  letters,
-  onLetterPress,
-}: SectionIndexProps) {
-  const theme = useTheme();
-  return (
-    <View style={styles.sectionIndex} pointerEvents="box-none">
-      {letters.map((letter) => (
-        <TouchableOpacity
-          key={letter}
-          onPress={() => {
-            Haptics.selectionAsync();
-            onLetterPress(letter);
-          }}
-          hitSlop={{ top: 2, bottom: 2, left: 6, right: 6 }}
-          accessibilityRole="button"
-          accessibilityLabel={`Jump to ${letter}`}
-        >
-          <Text
-            style={[
-              theme.textStyles.caption,
-              {
-                color: theme.colors.primary,
-                fontWeight: theme.fontWeights.semibold,
-                lineHeight: 16,
-              },
-            ]}
-          >
-            {letter}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Main screen
-// ---------------------------------------------------------------------------
 export function ContactsScreen(): React.JSX.Element {
   const theme = useTheme();
+  const c = theme.colors;
+  const t = useT();
   const navigation = useNavigation<NavProp>();
+  const listBg = theme.isDark ? c.background : c.surface;
 
-  const sectionListRef = useRef<SectionList<UserPreview, ContactSection>>(null);
-  const searchInputRef = useRef<TextInput>(null);
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchVisible, setIsSearchVisible] = useState(false);
-  const [contactSections, setContactSections] = useState<ContactSection[]>([]);
+  const listRef = useRef<SectionList<UserPreview, ContactSection>>(null);
+  const inputRef = useRef<TextInput>(null);
+  const [query, setQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [contacts, setContacts] = useState<UserPreview[] | null>(null);
+  const [statuses, setStatuses] = useState<Record<string, TdStatus>>({});
+  const [bots, setBots] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
+    let alive = true;
     loadContacts()
-      .then((list) => setContactSections(toSections(list)))
-      .catch(() => setContactSections([]));
+      .then(async (list) => {
+        if (!alive) return;
+        setContacts(list);
+        // Aniq holat (was_online, last week/month) — TDLib keshidan.
+        const st: Record<string, TdStatus> = {};
+        const bt: Record<string, boolean> = {};
+        await Promise.all(
+          list.map((u) =>
+            td<TdUser & TdObject>({ '@type': 'getUser', user_id: Number(u.id) })
+              .then((full) => {
+                st[u.id] = full.status as TdStatus;
+                if (full.type['@type'] === 'userTypeBot') bt[u.id] = true;
+              })
+              .catch(() => undefined),
+          ),
+        );
+        if (!alive) return;
+        setStatuses((prev) => ({ ...st, ...prev }));
+        setBots(bt);
+      })
+      .catch(() => alive && setContacts([]));
+    const off = onTdUpdate((u) => {
+      if (u['@type'] !== 'updateUserStatus') return;
+      const id = String(u.user_id);
+      setStatuses((prev) => ({ ...prev, [id]: u.status as TdStatus }));
+    });
+    return () => {
+      alive = false;
+      off();
+    };
   }, []);
 
-  const searchBarHeight = useSharedValue(0);
-  const searchBarOpacity = useSharedValue(0);
+  const sections = useMemo(() => toSections(contacts ?? []), [contacts]);
 
-  // ---------------------------------------------------------------------------
-  // Search toggle
-  // ---------------------------------------------------------------------------
-  const toggleSearch = useCallback(() => {
-    const willOpen = !isSearchVisible;
-    if (willOpen) {
-      setIsSearchVisible(true);
-      searchBarHeight.value = withSpring(52, { damping: 18, stiffness: 200 });
-      searchBarOpacity.value = withTiming(1, { duration: 200 });
-      setTimeout(() => searchInputRef.current?.focus(), 250);
-    } else {
-      searchBarOpacity.value = withTiming(0, { duration: 150 });
-      searchBarHeight.value = withTiming(0, { duration: 200 });
-      setTimeout(() => {
-        setIsSearchVisible(false);
-        setSearchQuery('');
-      }, 210);
-    }
-  }, [isSearchVisible, searchBarHeight, searchBarOpacity]);
-
-  const animatedSearchBar = useAnimatedStyle(() => ({
-    height: searchBarHeight.value,
-    opacity: searchBarOpacity.value,
-    overflow: 'hidden',
-  }));
-
-  // ---------------------------------------------------------------------------
-  // Filtered sections
-  // ---------------------------------------------------------------------------
-  const filteredSections = useMemo<ContactSection[]>(() => {
-    if (searchQuery.trim().length === 0) return contactSections;
-    const q = searchQuery.toLowerCase();
-    return contactSections
-      .map((section) => ({
-        ...section,
-        data: section.data.filter((c) => {
-          const fullName = `${c.firstName}${c.lastName ? ` ${c.lastName}` : ''}`.toLowerCase();
-          return fullName.includes(q) || (c.username ?? '').toLowerCase().includes(q);
-        }),
+  const filtered = useMemo<ContactSection[]>(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return sections;
+    return sections
+      .map((s) => ({
+        ...s,
+        data: s.data.filter(
+          (u) => fullName(u).toLowerCase().includes(q) || (u.username ?? '').toLowerCase().includes(q),
+        ),
       }))
       .filter((s) => s.data.length > 0);
-  }, [searchQuery, contactSections]);
+  }, [query, sections]);
 
-  const allLetters = useMemo(
-    () => contactSections.map((s) => s.letter),
-    [contactSections],
-  );
+  const toggleSearch = useCallback(() => {
+    if (searchOpen) {
+      setSearchOpen(false);
+      setQuery('');
+    } else {
+      setSearchOpen(true);
+      setTimeout(() => inputRef.current?.focus(), 80);
+    }
+  }, [searchOpen]);
 
-  // ---------------------------------------------------------------------------
-  // Navigation
-  // ---------------------------------------------------------------------------
-  const handleContactPress = useCallback(
+  const handlePress = useCallback(
     (contact: UserPreview) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       openPrivateChat(contact.id)
@@ -290,12 +211,7 @@ export function ContactsScreen(): React.JSX.Element {
           navigation.navigate('ChatsTab', {
             screen: 'ChatDetail',
             initial: false,
-            params: {
-              chatId: chat.id,
-              chatType: chat.type,
-              title: chat.name,
-              avatarUrl: chat.avatarUrl,
-            },
+            params: { chatId: chat.id, chatType: chat.type, title: chat.name, avatarUrl: chat.avatarUrl },
           }),
         )
         .catch(() => undefined);
@@ -303,328 +219,135 @@ export function ContactsScreen(): React.JSX.Element {
     [navigation],
   );
 
-  const handleLetterPress = useCallback(
+  const jumpTo = useCallback(
     (letter: string) => {
-      const sectionIndex = filteredSections.findIndex((s) => s.letter === letter);
+      const sectionIndex = filtered.findIndex((s) => s.letter === letter);
       if (sectionIndex >= 0) {
-        sectionListRef.current?.scrollToLocation({
-          sectionIndex,
-          itemIndex: 0,
-          animated: true,
-          viewOffset: 0,
-        });
+        Haptics.selectionAsync();
+        listRef.current?.scrollToLocation({ sectionIndex, itemIndex: 0, animated: true, viewOffset: 0 });
       }
     },
-    [filteredSections],
-  );
-
-  const handleInviteFriends = useCallback(async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      await Share.share({
-        message: "Uzbek TG'da yozishaylik!",
-        title: "Uzbek TG'ga taklif",
-      });
-    } catch {
-      // Share dismissed
-    }
-  }, []);
-
-  // ---------------------------------------------------------------------------
-  // Render helpers
-  // ---------------------------------------------------------------------------
-  const renderItem = useCallback(
-    ({ item }: { item: UserPreview }) => (
-      <ContactRow contact={item} onPress={handleContactPress} />
-    ),
-    [handleContactPress],
+    [filtered],
   );
 
   const renderSectionHeader = useCallback(
     ({ section }: { section: SectionListData<UserPreview, ContactSection> }) => (
-      <SectionHeader letter={section.letter} />
-    ),
-    [],
-  );
-
-  const renderItemSeparator = useCallback(() => <Divider inset={72} />, []);
-
-  const renderFooter = useCallback(
-    () => (
-      <TouchableOpacity
-        onPress={handleInviteFriends}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel="Invite Friends"
-        style={[
-          styles.inviteRow,
-          {
-            paddingHorizontal: theme.spacing.lg,
-            paddingVertical: theme.spacing.md,
-            marginTop: theme.spacing.lg,
-          },
-        ]}
-      >
-        <View
-          style={[
-            styles.inviteIconContainer,
-            {
-              backgroundColor: theme.colors.primary,
-              borderRadius: theme.radius.full,
-              width: 44,
-              height: 44,
-            },
-          ]}
-        >
-          <Ionicons name="share-social-outline" size={20} color="#FFFFFF" />
-        </View>
-        <View style={styles.inviteText}>
-          <Text
-            style={[
-              theme.textStyles.chatName,
-              { color: theme.colors.text },
-            ]}
-          >
-            Invite Friends
-          </Text>
-          <Text
-            style={[
-              theme.textStyles.bodySmall,
-              { color: theme.colors.textSecondary },
-            ]}
-          >
-            Do'stlaringizni taklif qiling
-          </Text>
-        </View>
-        <Ionicons
-          name="chevron-forward"
-          size={18}
-          color={theme.colors.textTertiary}
-        />
-      </TouchableOpacity>
-    ),
-    [theme, handleInviteFriends],
-  );
-
-  const hasNoResults =
-    searchQuery.trim().length > 0 && filteredSections.length === 0;
-
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
-  return (
-    <SafeAreaView
-      style={[styles.root, { backgroundColor: theme.colors.background }]}
-      edges={['top']}
-    >
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          {
-            paddingHorizontal: theme.spacing.lg,
-            paddingVertical: theme.spacing.md,
-            borderBottomColor: theme.colors.borderSubtle,
-          },
-        ]}
-      >
-        <Text
-          style={[theme.textStyles.headingLarge, { color: theme.colors.text }]}
-          accessibilityRole="header"
-        >
-          Kontaktlar
-        </Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            onPress={toggleSearch}
-            style={styles.headerIcon}
-            accessibilityRole="button"
-            accessibilityLabel={isSearchVisible ? 'Close search' : 'Search contacts'}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name={isSearchVisible ? 'close-outline' : 'search-outline'}
-              size={24}
-              color={theme.colors.primary}
-            />
-          </TouchableOpacity>
-        </View>
+      <View style={[styles.sectionHeader, { backgroundColor: listBg }]}>
+        <Text style={[styles.sectionLetter, { color: c.primary }]}>{section.letter}</Text>
       </View>
+    ),
+    [c.primary, listBg],
+  );
 
-      {/* Collapsible search bar */}
-      <Animated.View style={animatedSearchBar}>
-        <View
-          style={[
-            styles.searchBarWrapper,
-            {
-              paddingHorizontal: theme.spacing.lg,
-              paddingBottom: theme.spacing.sm,
-              backgroundColor: theme.colors.background,
-            },
-          ]}
-        >
-          <View
-            style={[
-              styles.searchBar,
-              {
-                backgroundColor: theme.colors.surfaceElevated,
-                borderRadius: theme.radius.lg,
-                paddingHorizontal: theme.spacing.md,
-              },
-            ]}
-          >
-            <Ionicons
-              name="search-outline"
-              size={16}
-              color={theme.colors.textTertiary}
-              style={{ marginRight: theme.spacing.xs }}
-            />
+  const noResults = query.trim().length > 0 && filtered.length === 0;
+
+  return (
+    <SafeAreaView style={[styles.root, { backgroundColor: listBg }]} edges={['top']}>
+      <View style={[styles.header, { backgroundColor: c.surface }, !theme.isDark && styles.headerLight]}>
+        {searchOpen ? (
+          <>
+            <TouchableOpacity onPress={toggleSearch} style={styles.headerBtn} accessibilityLabel={t('common.back')}>
+              <Ionicons name="arrow-back" size={24} color={c.text} />
+            </TouchableOpacity>
             <TextInput
-              ref={searchInputRef}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Kontaktlarni qidirish..."
-              placeholderTextColor={theme.colors.textTertiary}
-              style={[
-                styles.searchInput,
-                {
-                  color: theme.colors.text,
-                  fontSize: theme.fontSizes.md,
-                },
-              ]}
-              returnKeyType="search"
+              ref={inputRef}
+              value={query}
+              onChangeText={setQuery}
+              placeholder={t('main.contacts.search')}
+              placeholderTextColor={c.textTertiary}
+              style={[styles.input, { color: c.text }]}
               autoCorrect={false}
               autoCapitalize="none"
-              accessibilityLabel="Search contacts"
+              returnKeyType="search"
             />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity
-                onPress={() => setSearchQuery('')}
-                accessibilityRole="button"
-                accessibilityLabel="Clear search"
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons
-                  name="close-circle"
-                  size={16}
-                  color={theme.colors.textTertiary}
-                />
+            {query.length > 0 ? (
+              <TouchableOpacity onPress={() => setQuery('')} style={styles.headerBtn} accessibilityLabel={t('common.close')}>
+                <Ionicons name="close" size={22} color={c.textSecondary} />
               </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      </Animated.View>
-
-      {/* Content */}
-      <View style={styles.listContainer}>
-        {hasNoResults ? (
-          <View style={styles.emptyWrapper}>
-            <EmptyState
-              icon="👤"
-              title="Kontakt topilmadi"
-              subtitle={`"${searchQuery}" bo'yicha kontakt yo'q.`}
-            />
-          </View>
+            ) : null}
+          </>
         ) : (
-          <SectionList<UserPreview, ContactSection>
-            ref={sectionListRef}
-            sections={filteredSections}
-            keyExtractor={(item) => item.id}
-            renderItem={renderItem}
-            renderSectionHeader={renderSectionHeader}
-            ItemSeparatorComponent={renderItemSeparator}
-            ListFooterComponent={renderFooter}
-            stickySectionHeadersEnabled
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 100 }}
-            keyboardShouldPersistTaps="handled"
-            onScrollToIndexFailed={() => {}}
-          />
-        )}
-
-        {/* Section index strip */}
-        {!hasNoResults && searchQuery.trim().length === 0 && (
-          <SectionIndex letters={allLetters} onLetterPress={handleLetterPress} />
+          <>
+            <Text style={[styles.title, { color: c.text }]} accessibilityRole="header">
+              {t('tabs.contacts')}
+            </Text>
+            <TouchableOpacity onPress={toggleSearch} style={styles.headerBtn} accessibilityLabel={t('common.search')}>
+              <Ionicons name="search" size={23} color={c.text} />
+            </TouchableOpacity>
+          </>
         )}
       </View>
+
+      {contacts === null ? (
+        <ActivityIndicator style={{ marginTop: 60 }} color={c.primary} />
+      ) : noResults ? (
+        <EmptyState
+          icon="👤"
+          title={t('main.contacts.notFound')}
+          subtitle={t('main.contacts.notFoundSub', { q: query.trim() })}
+        />
+      ) : contacts.length === 0 ? (
+        <EmptyState icon="👥" title={t('main.contacts.empty')} subtitle={t('main.contacts.emptySub')} />
+      ) : (
+        <View style={{ flex: 1 }}>
+          <SectionList<UserPreview, ContactSection>
+            ref={listRef}
+            sections={filtered}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <ContactRow contact={item} status={statuses[item.id]} isBot={bots[item.id]} onPress={handlePress} />
+            )}
+            renderSectionHeader={renderSectionHeader}
+            extraData={[statuses, bots, t.lang]}
+            stickySectionHeadersEnabled
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 110 }}
+            keyboardShouldPersistTaps="handled"
+            onScrollToIndexFailed={() => undefined}
+          />
+          {query.trim().length === 0 && sections.length > 1 ? (
+            <View style={styles.index} pointerEvents="box-none">
+              {sections.map((s) => (
+                <TouchableOpacity key={s.letter} onPress={() => jumpTo(s.letter)} hitSlop={{ left: 8, right: 8 }}>
+                  <Text style={[styles.indexLetter, { color: c.primary }]}>{s.letter}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      )}
     </SafeAreaView>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  headerIcon: {
-    padding: 4,
-  },
-  searchBarWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  searchBar: {
-    flex: 1,
-    height: 40,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  searchInput: {
+  root: { flex: 1 },
+  header: { height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 },
+  headerLight: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(0,0,0,0.08)' },
+  title: { flex: 1, fontSize: 21, fontWeight: '700' },
+  headerBtn: { padding: 6 },
+  input: { flex: 1, fontSize: 18, marginLeft: 12, paddingVertical: 0 },
+  row: { flexDirection: 'row', alignItems: 'center', paddingLeft: 14, height: 64 },
+  rowBody: {
     flex: 1,
     height: '100%',
-    ...(Platform.OS === 'web' ? { outline: 'none' } as object : {}),
-  },
-  listContainer: {
-    flex: 1,
-  },
-  contactRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    gap: 12,
-  },
-  contactInfo: {
-    flex: 1,
-  },
-  sectionHeader: {
+    justifyContent: 'center',
+    marginLeft: 14,
+    paddingRight: 28,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  sectionIndex: {
+  name: { fontSize: 16.5, fontWeight: '500' },
+  status: { fontSize: 14, marginTop: 2 },
+  sectionHeader: { paddingHorizontal: 22, paddingTop: 10, paddingBottom: 4 },
+  sectionLetter: { fontSize: 15, fontWeight: '700' },
+  index: {
     position: 'absolute',
     right: 4,
     top: 0,
-    bottom: 0,
+    bottom: 100,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 8,
     gap: 2,
   },
-  inviteRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  inviteIconContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  inviteText: {
-    flex: 1,
-  },
-  emptyWrapper: {
-    flex: 1,
-    justifyContent: 'center',
-  },
+  indexLetter: { fontSize: 11.5, fontWeight: '600', lineHeight: 15 },
 });

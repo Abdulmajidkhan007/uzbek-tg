@@ -13,15 +13,30 @@ export interface TdObject {
 
 export interface TdFile {
   id: number;
-  local: { path: string; is_downloading_completed: boolean };
+  size?: number;
+  expected_size?: number;
+  local: {
+    path: string;
+    is_downloading_completed: boolean;
+    is_downloading_active?: boolean;
+    downloaded_size?: number;
+  };
+  remote?: { is_uploading_active?: boolean; is_uploading_completed?: boolean; uploaded_size?: number };
 }
 
 export interface TdChatPhotoInfo {
   small: TdFile;
 }
 
+export interface TdTextEntity {
+  offset: number;
+  length: number;
+  type: { '@type': string; url?: string; user_id?: number; language?: string };
+}
+
 export interface TdFormattedText {
   text: string;
+  entities?: TdTextEntity[];
 }
 
 export interface TdMessageSender {
@@ -47,7 +62,25 @@ export interface TdReaction {
 }
 
 export interface TdInteractionInfo {
+  view_count?: number;
+  forward_count?: number;
+  reply_info?: { reply_count: number; last_message_id?: number } | null;
   reactions?: { reactions: TdReaction[] };
+}
+
+export type TdMessageOrigin =
+  | { '@type': 'messageOriginUser'; sender_user_id: number }
+  | { '@type': 'messageOriginHiddenUser'; sender_name: string }
+  | { '@type': 'messageOriginChat'; sender_chat_id: number; author_signature: string }
+  | { '@type': 'messageOriginChannel'; chat_id: number; message_id: number; author_signature: string };
+
+export interface TdMessageReplyTo {
+  '@type': string;
+  chat_id?: number;
+  message_id?: number;
+  quote?: { text: TdFormattedText } | null;
+  origin?: TdMessageOrigin | null;
+  content?: TdMessageContent | null;
 }
 
 export interface TdMessage {
@@ -60,8 +93,14 @@ export interface TdMessage {
   edit_date: number;
   content: TdMessageContent;
   is_pinned?: boolean;
-  interaction_info?: TdInteractionInfo;
-  sending_state?: { '@type': 'messageSendingStatePending' | 'messageSendingStateFailed' };
+  is_channel_post?: boolean;
+  interaction_info?: TdInteractionInfo | null;
+  sending_state?: { '@type': 'messageSendingStatePending' | 'messageSendingStateFailed' } | null;
+  forward_info?: { origin: TdMessageOrigin; date: number } | null;
+  reply_to?: TdMessageReplyTo | null;
+  author_signature?: string;
+  reply_markup?: { '@type': string; rows?: { text: string; type: { '@type': string; [k: string]: unknown } }[][] } | null;
+  media_album_id?: string;
 }
 
 export interface TdChatPosition {
@@ -86,6 +125,10 @@ export interface TdChat {
   last_read_outbox_message_id: number;
   notification_settings: { mute_for: number };
   is_marked_as_unread?: boolean;
+  accent_color_id?: number;
+  draft_message?: { content?: { '@type': string; text?: TdFormattedText } } | null;
+  permissions?: Record<string, boolean>;
+  last_read_inbox_message_id?: number;
 }
 
 export interface TdUser {
@@ -99,6 +142,27 @@ export interface TdUser {
   profile_photo?: { small: TdFile };
   verification_status?: unknown;
   type: { '@type': string };
+  accent_color_id?: number;
+  is_contact?: boolean;
+  is_premium?: boolean;
+}
+
+export interface TdChatMemberStatus {
+  '@type': string;
+  rights?: Record<string, boolean>;
+  is_member?: boolean;
+}
+
+export interface TdSupergroup {
+  '@type': 'supergroup';
+  id: number;
+  usernames?: { active_usernames: string[] } | null;
+  status: TdChatMemberStatus;
+  member_count: number;
+  sign_messages?: boolean;
+  is_channel: boolean;
+  join_to_send_messages?: boolean;
+  is_forum?: boolean;
 }
 
 export type TdAuthState =

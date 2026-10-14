@@ -14,6 +14,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { td } from '@/services/tdlib/client';
 import Avatar from '@/components/common/Avatar';
 import { showAlert } from '@/components/ui/Dialog';
+import { useT } from '@/i18n';
 import { formatPhone } from '@/screens/settings/SettingsScreen';
 import type { MainTabParamList } from '@/navigation/types';
 
@@ -31,6 +32,7 @@ function InfoRow({ label, value, last }: { label: string; value: string; last?: 
 
 export function MyProfileScreen({ navigation }: Props): React.JSX.Element {
   const c = useTheme().colors;
+  const t = useT();
   const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.currentUser);
   const [uploading, setUploading] = useState(false);
@@ -51,22 +53,22 @@ export function MyProfileScreen({ navigation }: Props): React.JSX.Element {
         is_public: false,
       });
     } catch (e) {
-      showAlert('Rasm qo\'yilmadi', e instanceof Error ? e.message : String(e));
+      showAlert(t('settings.account.photoError'), e instanceof Error ? e.message : String(e));
     } finally {
       setUploading(false);
     }
-  }, []);
+  }, [t]);
 
   const buttons = [
-    { icon: 'camera', label: "Rasm qo'yish", onPress: () => void setPhoto() },
-    { icon: 'create', label: 'Tahrirlash', onPress: () => openSettings('EditProfile') },
-    { icon: 'settings', label: 'Sozlamalar', onPress: () => openSettings() },
+    { icon: 'camera', label: t('settings.myprofile.setPhoto'), onPress: () => void setPhoto() },
+    { icon: 'create', label: t('settings.myprofile.edit'), onPress: () => openSettings('EditProfile') },
+    { icon: 'settings', label: t('settings.myprofile.settings'), onPress: () => openSettings() },
   ];
 
   const rows: { label: string; value: string }[] = [];
-  if (user?.phone) rows.push({ label: 'Mobil', value: formatPhone(user.phone) });
-  if (user?.bio) rows.push({ label: 'Bio', value: user.bio });
-  if (user?.username) rows.push({ label: 'Foydalanuvchi nomi', value: `@${user.username}` });
+  if (user?.phone) rows.push({ label: t('settings.myprofile.mobile'), value: formatPhone(user.phone) });
+  if (user?.bio) rows.push({ label: t('settings.myprofile.bio'), value: user.bio });
+  if (user?.username) rows.push({ label: t('settings.myprofile.username'), value: `@${user.username}` });
 
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
@@ -83,7 +85,7 @@ export function MyProfileScreen({ navigation }: Props): React.JSX.Element {
           <Text style={[styles.name, { color: c.text }]} numberOfLines={1}>
             {name}
           </Text>
-          <Text style={[styles.status, { color: c.primary }]}>onlayn</Text>
+          <Text style={[styles.status, { color: c.primary }]}>{t('common.online')}</Text>
         </View>
 
         <View style={styles.buttons}>

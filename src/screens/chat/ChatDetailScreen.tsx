@@ -1,10 +1,9 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+/**
+ * Chat ekrani: TDLib tarixidan xabarlar (FlashList inverted), sana ajratkichlari,
+ * xizmat xabarlari, qadalgan xabar paneli, chat ichida qidiruv, xabar amallari,
+ * javob/tahrirlash, media/ovoz yuborish, kanal uchun Ovozsiz/Qo'shilish paneli.
+ */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,38 +11,63 @@ import {
   TouchableOpacity,
   Modal,
   Pressable,
+  TextInput,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withSpring,
-  FadeIn,
-  Layout,
-  type SharedValue,
-} from 'react-native-reanimated';
-import * as Haptics from '@/utils/haptics';
-import { isToday, isYesterday, format, isSameDay } from 'date-fns';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring, FadeIn, FadeOut } from 'react-native-reanimated';
+import { isSameDay } from 'date-fns';
 import type { StackScreenProps } from '@react-navigation/stack';
+import * as Haptics from '@/utils/haptics';
 
 import { useTheme } from '@/hooks/useTheme';
-import { useChatStore } from '@/stores/chat.store';
-import type { ChatMessage } from '@/stores/chat.store';
+import { useT, t } from '@/i18n';
+import { useChatStore, type Chat, type ChatMessage, type InlineButton, type MessageReply } from '@/stores/chat.store';
 import {
+  chatById,
+  clearHistory,
   closeChat,
+  deleteChat,
   deleteMessage as tdDeleteMessage,
+  editMessage,
+  ensureMessageLoaded,
+  getDiscussionChat,
+  getDraftText,
+  getInputMode,
+  getMessageLink,
+  getMessageProps,
   loadHistory,
+  loadOlderMessages,
+  loadPinnedMessage,
   markRead,
+  onPinnedChanged,
   openChat,
+  pressCallbackButton,
+  reactionsFor,
+  refreshHistory,
+  resolveTelegramLink,
+  resolveUsername,
+  saveDraft,
+  searchInChat,
+  sendMedia,
   sendText,
+  sendVoice,
+  setChatJoined,
   setChatMuted,
   setPinned,
   toggleReaction,
+  votePoll,
+  type InputMode,
+  type MessageProps,
+  type OutgoingMedia,
 } from '@/services/tdlib/chats';
+import { downloadFileNow } from '@/services/tdlib/files';
+import { AppNative, type Recording } from '@/services/native';
+import { setOpenChat } from '@/services/notifications';
 import type { ChatStackParamList } from '@/navigation/types';
 
 import Avatar from '@/components/common/Avatar';
@@ -51,7 +75,12 @@ import LoadingState from '@/components/common/LoadingState';
 import EmptyState from '@/components/common/EmptyState';
 import MessageBubble from '@/components/chat/MessageBubble';
 import MessageInput from '@/components/chat/MessageInput';
-import { showActionSheet, showAlert } from '@/components/ui/Dialog';
+import PinnedBar from '@/components/chat/PinnedBar';
+import { ChatBackground } from '@/components/chat/ChatBackground';
+import { DateSeparator, ServicePill } from '@/components/chat/ServiceMessage';
+import { ChatLinkContext, normalizeUrl, type ChatLinkHandlers } from '@/components/chat/linkActions';
+import { dateSeparatorLabel, userStatusLabel } from '@/components/chat/chatFormat';
+import { showAlert } from '@/components/ui/Dialog';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -60,387 +89,87 @@ type Props = StackScreenProps<ChatStackParamList, 'ChatDetail'>;
 
 type ListItem =
   | { kind: 'message'; message: ChatMessage }
+  | { kind: 'service'; message: ChatMessage }
   | { kind: 'separator'; label: string; id: string };
 
-interface ContextMenuOption {
+interface MenuOption {
   key: string;
   label: string;
-  icon: React.ComponentProps<typeof Ionicons>['name'];
+  icon: string;
   destructive?: boolean;
+  onPress: () => void;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-function getDateSeparatorLabel(date: Date): string {
-  if (isToday(date)) return 'Today';
-  if (isYesterday(date)) return 'Yesterday';
-  return format(date, 'EEE, d MMM');
-}
+const TG_LINK = /^(?:https?:\/\/)?(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)\/|^tg:/i;
 
 // ---------------------------------------------------------------------------
-// Date separator sub-component
+// Context menu (reaksiyalar qatori + amallar)
 // ---------------------------------------------------------------------------
-interface DateSeparatorProps {
-  label: string;
-}
-
-const DateSeparator = React.memo(function DateSeparator({ label }: DateSeparatorProps) {
-  const theme = useTheme();
-  return (
-    <View style={separatorStyles.row} accessibilityRole="none" accessibilityElementsHidden>
-      <View style={[separatorStyles.pill, { backgroundColor: theme.colors.surfaceElevated }]}>
-        <Text
-          style={[
-            theme.textStyles.caption,
-            { color: theme.colors.textSecondary, fontWeight: theme.fontWeights.medium },
-          ]}
-        >
-          {label}
-        </Text>
-      </View>
-    </View>
-  );
-});
-
-const separatorStyles = StyleSheet.create({
-  row: {
-    alignItems: 'center',
-    marginVertical: 8,
-    paddingHorizontal: 16,
-  },
-  pill: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Pinned message bar sub-component
-// ---------------------------------------------------------------------------
-interface PinnedBarProps {
-  message: ChatMessage;
-  onDismiss: () => void;
-}
-
-const PinnedBar = React.memo(function PinnedBar({ message, onDismiss }: PinnedBarProps) {
-  const theme = useTheme();
-
-  const preview =
-    message.type === 'voice'
-      ? '🎤 Voice message'
-      : message.type === 'image'
-      ? '📷 Photo'
-      : (message.text ?? '');
-
-  return (
-    <Animated.View
-      entering={FadeIn.duration(200)}
-      style={[
-        pinnedStyles.container,
-        {
-          backgroundColor: theme.colors.surface,
-          borderBottomColor: theme.colors.border,
-          paddingHorizontal: theme.spacing.lg,
-        },
-      ]}
-    >
-      <Ionicons
-        name="pin"
-        size={14}
-        color={theme.colors.primary}
-        style={{ marginRight: theme.spacing.sm }}
-      />
-      <View style={pinnedStyles.text}>
-        <Text
-          style={[
-            theme.textStyles.caption,
-            { color: theme.colors.primary, fontWeight: theme.fontWeights.semibold },
-          ]}
-        >
-          Pinned Message
-        </Text>
-        <Text
-          style={[theme.textStyles.caption, { color: theme.colors.textSecondary }]}
-          numberOfLines={1}
-        >
-          {preview}
-        </Text>
-      </View>
-      <TouchableOpacity
-        onPress={onDismiss}
-        accessibilityRole="button"
-        accessibilityLabel="Dismiss pinned message"
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-      >
-        <Ionicons name="close" size={16} color={theme.colors.textTertiary} />
-      </TouchableOpacity>
-    </Animated.View>
-  );
-});
-
-const pinnedStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  text: {
-    flex: 1,
-    marginRight: 8,
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Typing indicator sub-component
-// ---------------------------------------------------------------------------
-interface TypingIndicatorBarProps {
-  name: string;
-}
-
-const TypingIndicatorBar = React.memo(function TypingIndicatorBar({
-  name,
-}: TypingIndicatorBarProps) {
-  const theme = useTheme();
-
-  // Animate 3 dots with staggered offsets
-  const dot1 = useSharedValue(0);
-  const dot2 = useSharedValue(0);
-  const dot3 = useSharedValue(0);
-
-  useEffect(() => {
-    const animate = (sv: SharedValue<number>, delay: number) => {
-      const loop = () => {
-        sv.value = withTiming(-4, { duration: 300 }, () => {
-          sv.value = withTiming(0, { duration: 300 }, () => {
-            // Each cycle is 900ms; stagger restarts via setTimeout simulation
-          });
-        });
-      };
-      setTimeout(loop, delay);
-      const id = setInterval(loop, 900);
-      return id;
-    };
-
-    const id1 = animate(dot1, 0);
-    const id2 = animate(dot2, 150);
-    const id3 = animate(dot3, 300);
-
-    return () => {
-      clearInterval(id1);
-      clearInterval(id2);
-      clearInterval(id3);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const d1Style = useAnimatedStyle(() => ({ transform: [{ translateY: dot1.value }] }));
-  const d2Style = useAnimatedStyle(() => ({ transform: [{ translateY: dot2.value }] }));
-  const d3Style = useAnimatedStyle(() => ({ transform: [{ translateY: dot3.value }] }));
-
-  return (
-    <Animated.View
-      entering={FadeIn.duration(200)}
-      layout={Layout.springify()}
-      style={[
-        typingStyles.container,
-        { paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm },
-      ]}
-    >
-      <View style={[typingStyles.bubble, { backgroundColor: theme.colors.messageBubbleIncoming }]}>
-        <Animated.View style={[typingStyles.dot, { backgroundColor: theme.colors.textSecondary }, d1Style]} />
-        <Animated.View style={[typingStyles.dot, { backgroundColor: theme.colors.textSecondary }, d2Style]} />
-        <Animated.View style={[typingStyles.dot, { backgroundColor: theme.colors.textSecondary }, d3Style]} />
-      </View>
-      <Text style={[theme.textStyles.caption, { color: theme.colors.textTertiary, marginLeft: 8 }]}>
-        {name} is typing…
-      </Text>
-    </Animated.View>
-  );
-});
-
-const typingStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  bubble: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 16,
-    borderBottomLeftRadius: 4,
-    gap: 4,
-  },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Context menu sub-component
-// ---------------------------------------------------------------------------
-interface ContextMenuProps {
-  visible: boolean;
-  message: ChatMessage | null;
-  isOwnMessage: boolean;
-  onClose: () => void;
-  onReact: (emoji: string) => void;
-  onReply: () => void;
-  onCopy: () => void;
-  onPin: () => void;
-  onDelete: () => void;
-}
-
-const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
-
 const ContextMenu = React.memo(function ContextMenu({
   visible,
-  message,
-  isOwnMessage,
-  onClose,
+  reactions,
+  chosen,
+  options,
   onReact,
-  onReply,
-  onCopy,
-  onPin,
-  onDelete,
-}: ContextMenuProps) {
+  onClose,
+}: {
+  visible: boolean;
+  reactions: string[];
+  chosen: Set<string>;
+  options: MenuOption[];
+  onReact: (emoji: string) => void;
+  onClose: () => void;
+}) {
   const theme = useTheme();
-
-  const menuOpacity = useSharedValue(0);
-  const menuScale = useSharedValue(0.9);
+  const opacity = useSharedValue(0);
+  const scale = useSharedValue(0.9);
 
   useEffect(() => {
-    if (visible) {
-      menuOpacity.value = withTiming(1, { duration: 150 });
-      menuScale.value = withSpring(1, { damping: 20, stiffness: 300 });
-    } else {
-      menuOpacity.value = withTiming(0, { duration: 100 });
-      menuScale.value = withTiming(0.9, { duration: 100 });
-    }
-  }, [visible, menuOpacity, menuScale]);
+    opacity.value = withTiming(visible ? 1 : 0, { duration: visible ? 150 : 100 });
+    scale.value = visible ? withSpring(1, { damping: 20, stiffness: 300 }) : withTiming(0.9, { duration: 100 });
+  }, [visible, opacity, scale]);
 
-  const animatedMenu = useAnimatedStyle(() => ({
-    opacity: menuOpacity.value,
-    transform: [{ scale: menuScale.value }],
-  }));
-
-  const options: ContextMenuOption[] = [
-    { key: 'reply', label: 'Reply', icon: 'arrow-undo-outline' },
-    { key: 'copy', label: 'Copy', icon: 'copy-outline' },
-    { key: 'pin', label: message?.isPinned ? 'Unpin' : 'Pin', icon: 'pin-outline' },
-    ...(isOwnMessage
-      ? [{ key: 'delete', label: 'Delete', icon: 'trash-outline' as const, destructive: true }]
-      : []),
-  ];
-
-  const handleOption = useCallback(
-    (key: string) => {
-      switch (key) {
-        case 'reply':
-          onReply();
-          break;
-        case 'copy':
-          onCopy();
-          break;
-        case 'pin':
-          onPin();
-          break;
-        case 'delete':
-          onDelete();
-          break;
-      }
-      onClose();
-    },
-    [onReply, onCopy, onPin, onDelete, onClose]
-  );
+  const animated = useAnimatedStyle(() => ({ opacity: opacity.value, transform: [{ scale: scale.value }] }));
 
   if (!visible) return null;
-
   return (
-    <Modal
-      transparent
-      visible={visible}
-      animationType="none"
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
-      <Pressable style={contextStyles.overlay} onPress={onClose}>
+    <Modal transparent visible animationType="none" onRequestClose={onClose} statusBarTranslucent>
+      <Pressable style={menuStyles.overlay} onPress={onClose}>
         <Animated.View
-          style={[
-            contextStyles.menu,
-            animatedMenu,
-            {
-              backgroundColor: theme.colors.surfaceElevated,
-              borderRadius: theme.radius.lg,
-              ...theme.shadows.lg,
-            },
-          ]}
+          style={[menuStyles.menu, animated, { backgroundColor: theme.colors.surfaceElevated, borderRadius: theme.radius.lg, ...theme.shadows.lg }]}
         >
-          {/* Quick reactions row */}
-          <View
-            style={[
-              contextStyles.reactionsRow,
-              {
-                borderBottomColor: theme.colors.border,
-                paddingHorizontal: theme.spacing.md,
-                paddingVertical: theme.spacing.sm,
-              },
-            ]}
-          >
-            {REACTION_EMOJIS.map((emoji) => (
-              <TouchableOpacity
-                key={emoji}
-                onPress={() => {
-                  onReact(emoji);
-                  onClose();
-                }}
-                style={contextStyles.reactionButton}
-                accessibilityLabel={`React with ${emoji}`}
-                accessibilityRole="button"
-              >
-                <Text style={contextStyles.reactionEmoji}>{emoji}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Action options */}
-          {options.map((option, index) => (
+          {reactions.length > 0 ? (
+            <View style={[menuStyles.reactionsRow, { borderBottomColor: theme.colors.border }]}>
+              {reactions.map((emoji) => (
+                <TouchableOpacity
+                  key={emoji}
+                  onPress={() => {
+                    onReact(emoji);
+                    onClose();
+                  }}
+                  style={[menuStyles.reactionButton, chosen.has(emoji) && { backgroundColor: `${theme.colors.primary}33` }]}
+                  accessibilityRole="button"
+                >
+                  <Text style={menuStyles.reactionEmoji}>{emoji}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+          {options.map((o, i) => (
             <TouchableOpacity
-              key={option.key}
-              onPress={() => handleOption(option.key)}
+              key={o.key}
+              onPress={() => {
+                onClose();
+                o.onPress();
+              }}
               style={[
-                contextStyles.optionRow,
-                {
-                  paddingHorizontal: theme.spacing.lg,
-                  paddingVertical: theme.spacing.md,
-                  borderTopColor: theme.colors.border,
-                  borderTopWidth: index === 0 ? 0 : StyleSheet.hairlineWidth,
-                },
+                menuStyles.optionRow,
+                { borderTopColor: theme.colors.border, borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth },
               ]}
               accessibilityRole="button"
-              accessibilityLabel={option.label}
             >
-              <Ionicons
-                name={option.icon}
-                size={20}
-                color={option.destructive ? theme.colors.error : theme.colors.text}
-                style={{ marginRight: theme.spacing.md }}
-              />
-              <Text
-                style={[
-                  theme.textStyles.bodyMedium,
-                  { color: option.destructive ? theme.colors.error : theme.colors.text },
-                ]}
-              >
-                {option.label}
-              </Text>
+              <Ionicons name={o.icon} size={21} color={o.destructive ? theme.colors.error : theme.colors.textSecondary} style={{ marginRight: 16 }} />
+              <Text style={[theme.textStyles.bodyMedium, { color: o.destructive ? theme.colors.error : theme.colors.text }]}>{o.label}</Text>
             </TouchableOpacity>
           ))}
         </Animated.View>
@@ -449,33 +178,13 @@ const ContextMenu = React.memo(function ContextMenu({
   );
 });
 
-const contextStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  menu: {
-    width: '100%',
-    overflow: 'hidden',
-  },
-  reactionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  reactionButton: {
-    padding: 6,
-  },
-  reactionEmoji: {
-    fontSize: 26,
-  },
-  optionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+const menuStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
+  menu: { width: '100%', overflow: 'hidden' },
+  reactionsRow: { flexDirection: 'row', justifyContent: 'space-around', borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 8, paddingVertical: 8 },
+  reactionButton: { padding: 5, borderRadius: 18 },
+  reactionEmoji: { fontSize: 26 },
+  optionRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 13 },
 });
 
 // ---------------------------------------------------------------------------
@@ -484,524 +193,855 @@ const contextStyles = StyleSheet.create({
 export function ChatDetailScreen({ navigation, route }: Props) {
   const { chatId, chatType, title, avatarUrl } = route.params;
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const tr = useT();
 
-  const {
-    messages: allMessages,
-    setMessages,
-    addMessage,
-    updateMessage,
-    deleteMessage,
-    setActiveChatId,
-    markChatAsRead,
-    replyingTo,
-    setReplyingTo,
-    pinnedMessages,
-    setPinnedMessages,
-    chats,
-    typingIndicators,
-    setTypingIndicator,
-  } = useChatStore();
+  const chatMessages = useChatStore((s) => s.messages[chatId]) ?? EMPTY;
+  const storeChat = useChatStore(
+    useCallback(
+      (s) =>
+        s.chats.find((c) => c.id === chatId) ??
+        Object.values(s.listChats)
+          .flat()
+          .find((c) => c.id === chatId),
+      [chatId],
+    ),
+  );
+  const setActiveChatId = useChatStore((s) => s.setActiveChatId);
+  const markChatAsRead = useChatStore((s) => s.markChatAsRead);
 
-  const chatMessages = allMessages[chatId] ?? [];
+  // Ro'yxatlarda bo'lmagan chat (havola orqali ochilgan) — bir marta so'rab olinadi.
+  const [fetchedChat, setFetchedChat] = useState<Chat | null>(null);
+  const chat = storeChat ?? fetchedChat ?? undefined;
 
-  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
-  const [contextMenuMessage, setContextMenuMessage] = useState<ChatMessage | null>(null);
-  const [isTyping, setIsTyping] = useState(false);
-  const [showPinnedBar, setShowPinnedBar] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [editing, setEditing] = useState<ChatMessage | null>(null);
+  const [menu, setMenu] = useState<{ message: ChatMessage; options: MenuOption[] } | null>(null);
+  const [pinned, setPinnedMsg] = useState<ChatMessage | null>(null);
+  const [hiddenPinnedId, setHiddenPinnedId] = useState<string | null>(null);
+  const [inputMode, setInputMode] = useState<InputMode>('input');
+  const [isBroadcast, setIsBroadcast] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [pendingJump, setPendingJump] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [search, setSearch] = useState<{ query: string; results: string[]; index: number; busy: boolean } | null>(null);
+  const [initialDraft] = useState(() => getDraftText(chatId));
 
   const listRef = useRef<FlashListRef<ListItem>>(null);
-  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftRef = useRef(initialDraft);
+  const loadingOlder = useRef(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editingRef = useRef<ChatMessage | null>(null);
+  editingRef.current = editing;
+
+  const isChannel = chatType === 'channel' || chat?.type === 'channel';
+  const isGroup = !isChannel && (chatType === 'group' || chatType === 'topic_group' || chat?.type === 'group');
+
+  const showToast = useCallback((text: string) => {
+    setToast(text);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2200);
+  }, []);
+
+  const fail = useCallback((e: unknown) => {
+    showAlert(t('chat.actionFailed'), e instanceof Error ? e.message : String(e));
+  }, []);
 
   // ---------------------------------------------------------------------------
-  // Derived data
-  // ---------------------------------------------------------------------------
-  const chat = useMemo(() => chats.find((c) => c.id === chatId), [chats, chatId]);
-
-  const firstPinnedMessage = useMemo(() => {
-    // Check both pinnedMessages store and messages with isPinned flag
-    const storePinned = pinnedMessages[chatId];
-    if (storePinned && storePinned.length > 0) return storePinned[0] ?? null;
-    return chatMessages.find((m) => m.isPinned) ?? null;
-  }, [pinnedMessages, chatId, chatMessages]);
-
-  const isOwnMessage = useCallback((msg: ChatMessage) => msg.senderId === 'me', []);
-
-  // ---------------------------------------------------------------------------
-  // Build flat list data: interleave date separators with messages
-  // ---------------------------------------------------------------------------
-  const listData = useMemo<ListItem[]>(() => {
-    if (chatMessages.length === 0) return [];
-
-    // Messages are stored oldest-first; the list is inverted so newest appears at bottom.
-    // We reverse to iterate newest → oldest, insert separators, then reverse back.
-    const sorted = [...chatMessages].sort(
-      (a, b) => a.sentAt.getTime() - b.sentAt.getTime()
-    );
-
-    const items: ListItem[] = [];
-    let lastDate: Date | null = null;
-
-    for (const message of sorted) {
-      if (lastDate === null || !isSameDay(message.sentAt, lastDate)) {
-        items.push({
-          kind: 'separator',
-          label: getDateSeparatorLabel(message.sentAt),
-          id: `sep_${message.sentAt.toDateString()}`,
-        });
-        lastDate = message.sentAt;
-      }
-      items.push({ kind: 'message', message });
-    }
-
-    // Reverse so the FlashList (inverted) shows newest at the bottom
-    return items.reverse();
-  }, [chatMessages]);
-
-  // ---------------------------------------------------------------------------
-  // Load messages on mount
+  // Ochish / yopish
   // ---------------------------------------------------------------------------
   useEffect(() => {
     setActiveChatId(chatId);
-    setIsLoadingMessages(true);
+    setOpenChat(chatId);
+    setIsLoading(true);
     void openChat(chatId);
     loadHistory(chatId)
       .then(() => markRead(chatId))
       .catch(() => undefined)
-      .finally(() => setIsLoadingMessages(false));
+      .finally(() => setIsLoading(false));
     markChatAsRead(chatId);
+    getInputMode(chatId)
+      .then((r) => {
+        setInputMode(r.mode);
+        setIsBroadcast(r.isBroadcast);
+      })
+      .catch(() => undefined);
+    loadPinnedMessage(chatId).then(setPinnedMsg).catch(() => undefined);
+    if (!useChatStore.getState().chats.some((c) => c.id === chatId)) {
+      chatById(chatId).then(setFetchedChat).catch(() => undefined);
+    }
+    const unsubPinned = onPinnedChanged((id) => {
+      if (id === chatId) loadPinnedMessage(chatId).then(setPinnedMsg).catch(() => undefined);
+    });
 
     return () => {
+      unsubPinned();
       setActiveChatId(null);
+      setOpenChat(null);
       void closeChat(chatId);
-      if (typingTimerRef.current) {
-        clearTimeout(typingTimerRef.current);
-      }
+      if (!editingRef.current) void saveDraft(chatId, draftRef.current);
+      if (toastTimer.current) clearTimeout(toastTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId]);
 
+  // Til o'zgarsa — xizmat xabarlari va previewlar qayta tarjima qilinadi.
+  const firstLang = useRef(tr.lang);
+  useEffect(() => {
+    if (firstLang.current !== tr.lang) refreshHistory(chatId);
+    firstLang.current = tr.lang;
+  }, [tr.lang, chatId]);
+
+  // Chat ochiq turganda kelgan yangi xabarlarni o'qilgan deb belgilash.
+  const newestId = chatMessages.length > 0 ? chatMessages[chatMessages.length - 1]!.id : '';
+  const newestIncoming = chatMessages.length > 0 && chatMessages[chatMessages.length - 1]!.senderId !== 'me';
+  useEffect(() => {
+    if (!isLoading && newestId && newestIncoming) void markRead(chatId);
+  }, [newestId, newestIncoming, isLoading, chatId]);
+
   // ---------------------------------------------------------------------------
-  // Send message + simulate reply
+  // Ro'yxat ma'lumoti: sana ajratkichlari bilan, yangidan eskiga (inverted)
+  // ---------------------------------------------------------------------------
+  const listData = useMemo<ListItem[]>(() => {
+    const items: ListItem[] = [];
+    let lastDate: Date | null = null;
+    for (const message of chatMessages) {
+      if (lastDate === null || !isSameDay(message.sentAt, lastDate)) {
+        items.push({ kind: 'separator', label: dateSeparatorLabel(tr, message.sentAt), id: `sep_${message.sentAt.toDateString()}` });
+        lastDate = message.sentAt;
+      }
+      items.push({ kind: message.isService ? 'service' : 'message', message });
+    }
+    return items.reverse();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatMessages, tr.lang]);
+
+  // ---------------------------------------------------------------------------
+  // Xabarga o'tish (javob, qadalgan, qidiruv)
+  // ---------------------------------------------------------------------------
+  const flash = useCallback((id: string) => {
+    setHighlightId(id);
+    setTimeout(() => setHighlightId((h) => (h === id ? null : h)), 1600);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingJump) return;
+    const index = listData.findIndex((i) => i.kind !== 'separator' && i.message.id === pendingJump);
+    if (index < 0) return;
+    setPendingJump(null);
+    setTimeout(() => {
+      listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 })?.catch(() => undefined);
+      flash(pendingJump);
+    }, 60);
+  }, [pendingJump, listData, flash]);
+
+  const jumpTo = useCallback(
+    async (messageId: string) => {
+      if (!messageId || messageId === '0') return;
+      const found = await ensureMessageLoaded(chatId, messageId).catch(() => false);
+      if (!found) {
+        showToast(t('chat.messageNotFound'));
+        return;
+      }
+      setPendingJump(messageId);
+    },
+    [chatId, showToast],
+  );
+
+  const handleEndReached = useCallback(() => {
+    if (loadingOlder.current || isLoading) return;
+    loadingOlder.current = true;
+    loadOlderMessages(chatId)
+      .catch(() => false)
+      .finally(() => {
+        loadingOlder.current = false;
+      });
+  }, [chatId, isLoading]);
+
+  // ---------------------------------------------------------------------------
+  // Havolalar (xabar matnidagi url, @mention, #hashtag, /buyruq)
+  // ---------------------------------------------------------------------------
+  const openChatScreen = useCallback(
+    (c: Chat) => {
+      if (c.id === chatId) return;
+      navigation.push('ChatDetail', { chatId: c.id, chatType: c.type, title: c.name, avatarUrl: c.avatarUrl });
+    },
+    [navigation, chatId],
+  );
+
+  const startSearch = useCallback((query: string) => {
+    setSearch({ query, results: [], index: 0, busy: false });
+  }, []);
+
+  const runSearch = useCallback(
+    async (query: string) => {
+      const q = query.trim();
+      if (!q) return;
+      setSearch({ query, results: [], index: 0, busy: true });
+      const results = await searchInChat(chatId, q).catch(() => [] as string[]);
+      setSearch({ query, results, index: 0, busy: false });
+      if (results[0]) void jumpTo(results[0]);
+      else showToast(t('chat.searchNoResults'));
+    },
+    [chatId, jumpTo, showToast],
+  );
+
+  const linkHandlers = useMemo<ChatLinkHandlers>(
+    () => ({
+      openUrl: (raw) => {
+        const url = normalizeUrl(raw);
+        if (TG_LINK.test(raw)) {
+          resolveTelegramLink(url)
+            .then((r) => {
+              if (!r) return Linking.openURL(url);
+              if (r.chat.id === chatId) {
+                if (r.messageId) void jumpTo(r.messageId);
+                return undefined;
+              }
+              openChatScreen(r.chat);
+              return undefined;
+            })
+            .catch(() => showToast(t('chat.openLinkFailed')));
+          return;
+        }
+        Linking.openURL(url).catch(() => showToast(t('chat.openLinkFailed')));
+      },
+      openMention: (username) => {
+        resolveUsername(username)
+          .then((c) => (c ? openChatScreen(c) : showAlert(t('chat.usernameNotFound'))))
+          .catch(() => showAlert(t('chat.usernameNotFound')));
+      },
+      openUser: (userId) => navigation.navigate('Profile', { userId }),
+      onHashtag: (tag) => {
+        startSearch(tag);
+        void runSearch(tag);
+      },
+      onBotCommand: inputMode === 'input' ? (cmd) => void sendText(chatId, cmd).catch(fail) : undefined,
+    }),
+    [chatId, navigation, openChatScreen, jumpTo, showToast, startSearch, runSearch, inputMode, fail],
+  );
+
+  // ---------------------------------------------------------------------------
+  // Yuborish
   // ---------------------------------------------------------------------------
   const handleSendText = useCallback(
     async (text: string) => {
+      const ed = editing;
+      if (ed) {
+        setEditing(null);
+        try {
+          await editMessage(chatId, ed.id, text, ed.type !== 'text');
+        } catch (e) {
+          fail(e);
+        }
+        return;
+      }
       const replyToId = replyingTo?.id;
       setReplyingTo(null);
+      draftRef.current = '';
       try {
         await sendText(chatId, text, replyToId);
       } catch (e) {
-        showAlert('Xabar yuborilmadi', e instanceof Error ? e.message : String(e));
+        showAlert(t('chat.sendError'), e instanceof Error ? e.message : String(e));
       }
     },
-    [chatId, replyingTo, setReplyingTo]
+    [chatId, replyingTo, editing, fail],
   );
 
-  const handleSendVoice = useCallback(async () => {
-    // Ovozli xabar yozish 2-fazada (media) qo'shiladi.
-    showAlert('Tez orada', "Ovozli xabar yuborish keyingi bosqichda qo'shiladi.");
-  }, []);
+  const handleSendVoice = useCallback(
+    async (rec: Recording) => {
+      const replyToId = replyingTo?.id;
+      setReplyingTo(null);
+      try {
+        await sendVoice(chatId, rec, replyToId);
+      } catch (e) {
+        showAlert(t('chat.sendError'), e instanceof Error ? e.message : String(e));
+      }
+    },
+    [chatId, replyingTo],
+  );
 
-  const handleAttachmentPress = useCallback(() => {
-    // Future: open media picker
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, []);
+  const handleSendMedia = useCallback(
+    async (items: OutgoingMedia[], caption: string) => {
+      const replyToId = replyingTo?.id;
+      setReplyingTo(null);
+      draftRef.current = '';
+      try {
+        await sendMedia(chatId, items, caption || undefined, replyToId);
+      } catch (e) {
+        showAlert(t('chat.sendError'), e instanceof Error ? e.message : String(e));
+      }
+    },
+    [chatId, replyingTo],
+  );
 
   // ---------------------------------------------------------------------------
-  // Message long-press → context menu
+  // Xabar amallari (uzoq bosish)
   // ---------------------------------------------------------------------------
-  const handleMessageLongPress = useCallback((msg: ChatMessage) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setContextMenuMessage(msg);
-  }, []);
+  const saveMedia = useCallback(
+    async (msg: ChatMessage, mode: 'gallery' | 'share') => {
+      if (!msg.mediaFileId) return;
+      try {
+        const uri = await downloadFileNow(msg.mediaFileId);
+        const path = uri.replace(/^file:\/\//, '');
+        const mime = msg.mimeType ?? (msg.type === 'video' ? 'video/mp4' : 'image/jpeg');
+        if (mode === 'gallery') {
+          const ok = await AppNative.saveToGallery(path, mime);
+          showToast(ok ? t('chat.savedToGallery') : t('chat.saveFailed'));
+        } else {
+          await AppNative.shareFile(path, mime);
+        }
+      } catch (e) {
+        fail(e);
+      }
+    },
+    [showToast, fail],
+  );
 
-  const handleContextMenuClose = useCallback(() => {
-    setContextMenuMessage(null);
-  }, []);
+  const confirmDelete = useCallback(
+    (msg: ChatMessage, props: MessageProps | null) => {
+      const forAll = props?.canBeDeletedForAll ?? msg.senderId === 'me';
+      const forSelf = props?.canBeDeletedOnlyForSelf ?? true;
+      const buttons: { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[] = [];
+      const run = (revoke: boolean) => () => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        tdDeleteMessage(chatId, msg.id, revoke).catch(fail);
+      };
+      if (forAll && forSelf) {
+        buttons.push({ text: t('chat.deleteForAll'), style: 'destructive', onPress: run(true) });
+        buttons.push({ text: t('chat.deleteForMe'), style: 'destructive', onPress: run(false) });
+      } else {
+        buttons.push({ text: t('common.delete'), style: 'destructive', onPress: run(forAll) });
+      }
+      buttons.push({ text: t('common.cancel'), style: 'cancel' });
+      showAlert(t('chat.deleteMessage'), t('chat.deleteConfirm'), buttons);
+    },
+    [chatId, fail],
+  );
+
+  const handleMessageLongPress = useCallback(
+    async (msg: ChatMessage) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const props = await getMessageProps(chatId, msg.id);
+      const opts: MenuOption[] = [];
+      const canWrite = inputMode === 'input';
+      const isMedia = msg.mediaFileId != null && !msg.isService;
+      if (canWrite && (props?.canBeReplied ?? true) && !msg.isService) {
+        opts.push({ key: 'reply', label: t('chat.reply'), icon: 'arrow-undo-outline', onPress: () => { setEditing(null); setReplyingTo(msg); } });
+      }
+      if (msg.text && !isMediaOnly(msg) && (props?.canBeCopied ?? true)) {
+        opts.push({
+          key: 'copy',
+          label: t('common.copy'),
+          icon: 'copy-outline',
+          onPress: () => {
+            Clipboard.setString(msg.text ?? '');
+            showToast(t('chat.textCopied'));
+          },
+        });
+      }
+      if (props?.canGetLink) {
+        opts.push({
+          key: 'link',
+          label: t('chat.copyLink'),
+          icon: 'link-outline',
+          onPress: () => {
+            getMessageLink(chatId, msg.id)
+              .then((link) => {
+                Clipboard.setString(link);
+                showToast(t('chat.linkCopied'));
+              })
+              .catch(fail);
+          },
+        });
+      }
+      if (props?.canBeEdited) {
+        opts.push({ key: 'edit', label: t('common.edit'), icon: 'pencil-outline', onPress: () => { setReplyingTo(null); setEditing(msg); } });
+      }
+      if (props?.canBePinned) {
+        opts.push({
+          key: 'pin',
+          label: msg.isPinned ? t('chat.unpin') : t('chat.pin'),
+          icon: msg.isPinned ? 'pin' : 'pin-outline',
+          onPress: () => {
+            setPinned(chatId, msg.id, !msg.isPinned).catch(fail);
+            setHiddenPinnedId(null);
+          },
+        });
+      }
+      if (props?.canBeForwarded) {
+        opts.push({
+          key: 'forward',
+          label: t('chat.forward'),
+          icon: 'arrow-redo-outline',
+          onPress: () => navigation.navigate('ForwardMessage', { messageId: msg.id, sourceChatId: chatId }),
+        });
+      }
+      if (isMedia && (props?.canBeSaved ?? true)) {
+        if (msg.type === 'image' || msg.type === 'video') {
+          opts.push({ key: 'save', label: t('chat.saveToGallery'), icon: 'download-outline', onPress: () => void saveMedia(msg, 'gallery') });
+        }
+        opts.push({ key: 'share', label: t('common.share'), icon: 'share-social-outline', onPress: () => void saveMedia(msg, 'share') });
+      }
+      if (props ? props.canBeDeletedForAll || props.canBeDeletedOnlyForSelf : msg.senderId === 'me') {
+        opts.push({ key: 'delete', label: t('common.delete'), icon: 'trash-outline', destructive: true, onPress: () => confirmDelete(msg, props) });
+      }
+      if (opts.length === 0 && reactionsFor(chatId).length === 0) return;
+      setMenu({ message: msg, options: opts });
+    },
+    [chatId, inputMode, navigation, showToast, fail, saveMedia, confirmDelete],
+  );
+
+  const menuReactions = useMemo(() => (menu && !menu.message.isService ? reactionsFor(chatId) : []), [menu, chatId]);
+  const menuChosen = useMemo(
+    () => new Set(menu?.message.reactions.filter((r) => r.hasCurrentUser).map((r) => r.emoji) ?? []),
+    [menu],
+  );
 
   const handleReact = useCallback(
     (emoji: string) => {
-      if (!contextMenuMessage) return;
+      if (!menu) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const chosen = contextMenuMessage.reactions.some((r) => r.emoji === emoji && r.hasCurrentUser);
-      void toggleReaction(chatId, contextMenuMessage.id, emoji, !chosen);
+      void toggleReaction(chatId, menu.message.id, emoji, !menuChosen.has(emoji));
     },
-    [chatId, contextMenuMessage]
+    [chatId, menu, menuChosen],
   );
-
-  const handleReplyFromMenu = useCallback(() => {
-    if (!contextMenuMessage) return;
-    setReplyingTo(contextMenuMessage);
-  }, [contextMenuMessage, setReplyingTo]);
-
-  const handleCopy = useCallback(() => {
-    if (!contextMenuMessage) return;
-    const text = contextMenuMessage.text ?? '';
-    Clipboard.setString(text);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [contextMenuMessage]);
-
-  const handlePin = useCallback(() => {
-    if (!contextMenuMessage) return;
-    setPinned(chatId, contextMenuMessage.id, !contextMenuMessage.isPinned).catch((e: unknown) =>
-      showAlert('Bajarilmadi', e instanceof Error ? e.message : String(e))
-    );
-    setShowPinnedBar(true);
-  }, [chatId, contextMenuMessage]);
-
-  const handleDelete = useCallback(() => {
-    if (!contextMenuMessage) return;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    // O'z xabarlari hamma uchun o'chiriladi, boshqalarniki — faqat o'zida.
-    tdDeleteMessage(chatId, contextMenuMessage.id, contextMenuMessage.senderId === 'me').catch(
-      (e: unknown) => showAlert("O'chirilmadi", e instanceof Error ? e.message : String(e))
-    );
-  }, [chatId, contextMenuMessage]);
-
-  const handleReplyPress = useCallback((_replyId: string) => {
-    // Future: scroll to the replied message
-  }, []);
 
   const handleReactionPress = useCallback(
     (messageId: string, emoji: string) => {
-      const msg = chatMessages.find((m) => m.id === messageId);
+      const msg = useChatStore.getState().messages[chatId]?.find((m) => m.id === messageId);
       const existing = msg?.reactions.find((r) => r.emoji === emoji);
       if (!existing) return;
       void toggleReaction(chatId, messageId, emoji, !existing.hasCurrentUser);
     },
-    [chatId, chatMessages]
+    [chatId],
   );
 
-  // ---------------------------------------------------------------------------
-  // Header navigation
-  // ---------------------------------------------------------------------------
-  const handleHeaderPress = useCallback(() => {
-    if (chatType === 'group' || chatType === 'topic_group') {
-      navigation.navigate('GroupInfo', { chatId });
-    } else if (chatType === 'channel') {
-      navigation.navigate('ChannelInfo', { chatId });
-    } else {
-      // private — find the other user
-      const otherUserId = chat?.otherUser?.id;
-      if (otherUserId) {
-        navigation.navigate('Profile', { userId: otherUserId });
+  const handleReplyPress = useCallback(
+    (reply: MessageReply) => {
+      if (reply.chatId && reply.chatId !== chatId) {
+        chatById(reply.chatId)
+          .then((c) => c && openChatScreen(c))
+          .catch(() => undefined);
+        return;
       }
-    }
-  }, [chatType, chatId, chat, navigation]);
+      void jumpTo(reply.messageId);
+    },
+    [chatId, jumpTo, openChatScreen],
+  );
 
-  const handleMoreOptions = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const muted = chat?.isMuted ?? false;
-    showActionSheet({
-      title: chat?.name ?? title,
-      options: [
-        {
-          text: muted ? 'Ovozni yoqish' : 'Ovozsiz qilish',
-          icon: muted ? 'notifications-outline' : 'notifications-off-outline',
-          onPress: () => void setChatMuted(chatId, !muted),
-        },
-        { text: "Ma'lumot", icon: 'information-circle-outline', onPress: () => handleHeaderPress() },
-      ],
-    });
-  }, [chat?.isMuted, chat?.name, title, chatId, handleHeaderPress]);
+  const handleButtonPress = useCallback(
+    async (msg: ChatMessage, b: InlineButton) => {
+      switch (b.kind) {
+        case 'url':
+        case 'loginUrl':
+        case 'webApp':
+          if (b.url) linkHandlers.openUrl(b.url);
+          return;
+        case 'copyText':
+          Clipboard.setString(b.copyText ?? '');
+          showToast(t('common.copied'));
+          return;
+        case 'user':
+          if (b.userId) navigation.navigate('Profile', { userId: b.userId });
+          return;
+        case 'callback': {
+          if (!b.data) return;
+          try {
+            const res = await pressCallbackButton(chatId, msg.id, b.data);
+            if (res.url) linkHandlers.openUrl(res.url);
+            if (res.text) {
+              if (res.showAlert) showAlert(chat?.name ?? title, res.text);
+              else showToast(res.text);
+            }
+          } catch (e) {
+            // Bot javob bermasa (timeout) — jim.
+            if (e instanceof Error && !/timeout|BOT_RESPONSE_TIMEOUT/i.test(e.message)) fail(e);
+          }
+          return;
+        }
+        default:
+          return;
+      }
+    },
+    [chatId, chat?.name, title, linkHandlers, navigation, showToast, fail],
+  );
 
-  // ---------------------------------------------------------------------------
-  // Header sub-title
-  // ---------------------------------------------------------------------------
-  const headerSubtitle = useMemo(() => {
-    if (chat?.isTyping && chat.typingUserName) return `${chat.typingUserName}...`;
-    if (chatType === 'group' || chatType === 'topic_group' || chatType === 'channel') {
-      const count = chat?.memberCount;
-      if (chatType === 'channel') return count != null ? `${count} obunachi` : 'Kanal';
-      return count != null ? `${count} a'zo` : 'Guruh';
-    }
-    const otherUser = chat?.otherUser;
-    if (!otherUser) return '';
-    if (otherUser.status === 'online') return 'onlayn';
-    if (otherUser.status === 'recently') return 'yaqinda onlayn edi';
-    return 'uzoq vaqt oldin onlayn edi';
-  }, [chatType, chat]);
+  const handleCommentsPress = useCallback(
+    (msg: ChatMessage) => {
+      getDiscussionChat(chatId, msg.id)
+        .then((c) => c && openChatScreen(c))
+        .catch(fail);
+    },
+    [chatId, openChatScreen, fail],
+  );
 
-  // ---------------------------------------------------------------------------
-  // Render item
-  // ---------------------------------------------------------------------------
+  const handleVote = useCallback(
+    async (msg: ChatMessage, ids: number[]) => {
+      await votePoll(chatId, msg.id, ids).catch(fail);
+    },
+    [chatId, fail],
+  );
+
   const handleMediaPress = useCallback(
     (msg: ChatMessage) => {
       const preview = msg.mediaUrl ?? msg.thumbUrl;
       navigation.navigate('MediaPreview', {
         mediaUrls: preview ? [preview] : [],
         initialIndex: 0,
-        title: chat?.name ?? title,
+        title: msg.senderName || chat?.name || title,
         fileId: msg.mediaFileId,
         kind: msg.type === 'video' ? 'video' : 'photo',
       });
     },
-    [navigation, chat?.name, title]
+    [navigation, chat?.name, title],
   );
 
+  // ---------------------------------------------------------------------------
+  // Sarlavha
+  // ---------------------------------------------------------------------------
+  const handleHeaderPress = useCallback(() => {
+    if (isChannel) navigation.navigate('ChannelInfo', { chatId });
+    else if (isGroup) navigation.navigate('GroupInfo', { chatId });
+    else if (chat?.otherUser?.id) navigation.navigate('Profile', { userId: chat.otherUser.id });
+  }, [isChannel, isGroup, chatId, chat, navigation]);
+
+  const handleMoreOptions = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const muted = chat?.isMuted ?? false;
+    const name = chat?.name ?? title;
+    const opts: MenuOption[] = [
+      { key: 'search', label: t('chat.searchInChat'), icon: 'search-outline', onPress: () => startSearch('') },
+      {
+        key: 'mute',
+        label: muted ? t('chat.unmute') : t('chat.mute'),
+        icon: muted ? 'notifications-outline' : 'notifications-off-outline',
+        onPress: () => void setChatMuted(chatId, !muted).catch(fail),
+      },
+      { key: 'info', label: t('chat.info'), icon: 'information-circle-outline', onPress: handleHeaderPress },
+    ];
+    if (!isChannel) {
+      opts.push({
+        key: 'clear',
+        label: t('chat.clearHistory'),
+        icon: 'brush-outline',
+        onPress: () =>
+          showAlert(t('chat.clearHistory'), t('chat.clearHistoryConfirm'), [
+            { text: t('common.cancel'), style: 'cancel' },
+            { text: t('chat.clearHistory'), style: 'destructive', onPress: () => void clearHistory(chatId).catch(fail) },
+          ]),
+      });
+    }
+    if (inputMode !== 'join') {
+      const leaveLabel = isChannel ? t('chat.leaveChannel') : isGroup ? t('chat.leaveGroup') : t('chat.deleteChat');
+      opts.push({
+        key: 'leave',
+        label: leaveLabel,
+        icon: isChannel || isGroup ? 'exit-outline' : 'trash-outline',
+        destructive: true,
+        onPress: () =>
+          showAlert(leaveLabel, isChannel || isGroup ? t('chat.leaveConfirm', { name }) : t('chat.deleteChatConfirm'), [
+            { text: t('common.cancel'), style: 'cancel' },
+            {
+              text: isChannel || isGroup ? t('chat.leave') : t('common.delete'),
+              style: 'destructive',
+              onPress: () =>
+                deleteChat(chatId)
+                  .then(() => navigation.goBack())
+                  .catch(fail),
+            },
+          ]),
+      });
+    }
+    setMenu({ message: SENTINEL, options: opts });
+  }, [chat, title, chatId, isChannel, isGroup, inputMode, navigation, handleHeaderPress, startSearch, fail]);
+
+  const headerSubtitle = useMemo(() => {
+    if (chat?.isTyping && chat.typingUserName) return `${chat.typingUserName}…`;
+    if (isChannel) return chat?.memberCount != null ? tr.p('chat.subscribers', chat.memberCount) : tr('chat.channel');
+    if (isGroup) return chat?.memberCount != null ? tr.p('chat.members', chat.memberCount) : tr('chat.group');
+    return userStatusLabel(tr, chat?.otherUser);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat, isChannel, isGroup, tr.lang]);
+
+  // ---------------------------------------------------------------------------
+  // Render item
+  // ---------------------------------------------------------------------------
   const renderItem = useCallback(
     ({ item }: { item: ListItem }) => {
-      if (item.kind === 'separator') {
-        return <DateSeparator label={item.label} />;
-      }
+      if (item.kind === 'separator') return <DateSeparator label={item.label} />;
       const { message } = item;
+      if (item.kind === 'service') {
+        return (
+          <ServicePill
+            text={message.text ?? ''}
+            highlighted={highlightId === message.id}
+            onLongPress={() => void handleMessageLongPress(message)}
+          />
+        );
+      }
       return (
         <MessageBubble
           message={message}
-          isOwn={isOwnMessage(message)}
-          showSender={
-            (chatType === 'group' || chatType === 'topic_group') && !isOwnMessage(message)
-          }
+          isOwn={message.senderId === 'me' && !isChannel}
+          showSender={isGroup && message.senderId !== 'me'}
+          isChannel={isChannel}
+          highlighted={highlightId === message.id}
           onLongPress={handleMessageLongPress}
           onReplyPress={handleReplyPress}
           onReactionPress={handleReactionPress}
           onMediaPress={handleMediaPress}
+          onButtonPress={handleButtonPress}
+          onCommentsPress={handleCommentsPress}
+          onVote={handleVote}
         />
       );
     },
-    [chatType, isOwnMessage, handleMessageLongPress, handleReplyPress, handleReactionPress, handleMediaPress]
+    [isChannel, isGroup, highlightId, handleMessageLongPress, handleReplyPress, handleReactionPress, handleMediaPress, handleButtonPress, handleCommentsPress, handleVote],
   );
 
-  const keyExtractor = useCallback((item: ListItem) => {
-    if (item.kind === 'separator') return item.id;
-    return item.message.id;
-  }, []);
-
+  const keyExtractor = useCallback((item: ListItem) => (item.kind === 'separator' ? item.id : item.message.id), []);
   const getItemType = useCallback((item: ListItem) => item.kind, []);
-
-  // ---------------------------------------------------------------------------
-  // Loading / empty states
-  // ---------------------------------------------------------------------------
-  if (isLoadingMessages && chatMessages.length === 0) {
-    return (
-      <SafeAreaView
-        style={[styles.root, { backgroundColor: theme.colors.background }]}
-        edges={['top']}
-      >
-        <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.backButton}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-          >
-            <Ionicons name="chevron-back" size={26} color={theme.colors.primary} />
-          </TouchableOpacity>
-          <Text
-            style={[theme.textStyles.headingSmall, { color: theme.colors.text }]}
-            numberOfLines={1}
-          >
-            {title}
-          </Text>
-        </View>
-        <LoadingState message="Loading messages..." />
-      </SafeAreaView>
-    );
-  }
 
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
-  return (
-    <SafeAreaView
-      style={[styles.root, { backgroundColor: theme.colors.background }]}
-      edges={['top']}
-    >
-      {/* ------------------------------------------------------------------ */}
-      {/* Header                                                               */}
-      {/* ------------------------------------------------------------------ */}
-      <View
-        style={[
-          styles.header,
-          {
-            backgroundColor: theme.colors.surface,
-            borderBottomColor: theme.colors.border,
-            paddingHorizontal: theme.spacing.sm,
-          },
-        ]}
-      >
-        {/* Back button */}
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backButton}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-          hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-        >
-          <Ionicons name="chevron-back" size={26} color={theme.colors.primary} />
-        </TouchableOpacity>
-
-        {/* Center: avatar + name/status — tappable */}
-        <TouchableOpacity
-          onPress={handleHeaderPress}
-          style={styles.headerCenter}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel={`View ${chatType === 'group' ? 'group' : 'profile'} info`}
-        >
-          <Avatar
-            uri={avatarUrl}
-            name={title}
-            size={36}
-            showOnline={chatType === 'private'}
-            isOnline={chat?.isOnline}
-            style={{ marginRight: theme.spacing.sm }}
-          />
-          <View style={styles.headerTitleGroup}>
-            <Text
-              style={[theme.textStyles.chatName, { color: theme.colors.text }]}
-              numberOfLines={1}
-            >
-              {title}
-            </Text>
-            <Text
-              style={[
-                theme.textStyles.caption,
-                {
-                  color:
-                    chat?.otherUser?.status === 'online'
-                      ? theme.colors.onlineDot
-                      : theme.colors.textSecondary,
-                },
-              ]}
-              numberOfLines={1}
-            >
-              {headerSubtitle}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Right actions */}
-        <View style={styles.headerRight}>
+  const header = search ? (
+    <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border, paddingHorizontal: theme.spacing.sm }]}>
+      <TouchableOpacity onPress={() => setSearch(null)} style={styles.backButton} accessibilityRole="button" accessibilityLabel={tr('common.close')}>
+        <Ionicons name="arrow-back" size={24} color={theme.colors.primary} />
+      </TouchableOpacity>
+      <TextInput
+        autoFocus
+        value={search.query}
+        onChangeText={(q) => setSearch((s) => (s ? { ...s, query: q } : s))}
+        onSubmitEditing={() => void runSearch(search.query)}
+        returnKeyType="search"
+        placeholder={tr('common.search')}
+        placeholderTextColor={theme.colors.textTertiary}
+        style={[styles.searchInput, { color: theme.colors.text }]}
+      />
+      {search.busy ? <ActivityIndicator color={theme.colors.primary} style={{ marginHorizontal: 8 }} /> : null}
+      {search.results.length > 0 ? (
+        <>
+          <Text style={[theme.textStyles.caption, { color: theme.colors.textSecondary, marginHorizontal: 4 }]}>
+            {tr('chat.searchCount', { i: search.index + 1, n: search.results.length })}
+          </Text>
           <TouchableOpacity
-            onPress={handleMoreOptions}
+            disabled={search.index >= search.results.length - 1}
+            onPress={() => {
+              const i = search.index + 1;
+              setSearch({ ...search, index: i });
+              void jumpTo(search.results[i]!);
+            }}
             style={styles.headerIconButton}
-            accessibilityRole="button"
-            accessibilityLabel="More options"
           >
-            <Ionicons name="ellipsis-vertical" size={22} color={theme.colors.primary} />
+            <Ionicons name="chevron-up" size={22} color={search.index >= search.results.length - 1 ? theme.colors.textTertiary : theme.colors.primary} />
           </TouchableOpacity>
+          <TouchableOpacity
+            disabled={search.index <= 0}
+            onPress={() => {
+              const i = search.index - 1;
+              setSearch({ ...search, index: i });
+              void jumpTo(search.results[i]!);
+            }}
+            style={styles.headerIconButton}
+          >
+            <Ionicons name="chevron-down" size={22} color={search.index <= 0 ? theme.colors.textTertiary : theme.colors.primary} />
+          </TouchableOpacity>
+        </>
+      ) : null}
+    </View>
+  ) : (
+    <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border, paddingHorizontal: theme.spacing.sm }]}>
+      <TouchableOpacity
+        onPress={() => navigation.goBack()}
+        style={styles.backButton}
+        accessibilityRole="button"
+        accessibilityLabel={tr('chat.goBack')}
+        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+      >
+        <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+      </TouchableOpacity>
+      <TouchableOpacity onPress={handleHeaderPress} style={styles.headerCenter} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={tr('chat.info')}>
+        <Avatar
+          uri={chat?.avatarUrl ?? avatarUrl}
+          name={chat?.name ?? title}
+          size={38}
+          showOnline={!isChannel && !isGroup}
+          isOnline={chat?.isOnline}
+          style={{ marginRight: theme.spacing.sm }}
+        />
+        <View style={styles.headerTitleGroup}>
+          <Text style={[theme.textStyles.chatName, { color: theme.colors.text }]} numberOfLines={1}>
+            {chat?.name ?? title}
+          </Text>
+          <Text
+            style={[
+              theme.textStyles.caption,
+              {
+                color:
+                  chat?.isTyping || chat?.otherUser?.status === 'online' ? theme.colors.primary : theme.colors.textSecondary,
+              },
+            ]}
+            numberOfLines={1}
+          >
+            {headerSubtitle}
+          </Text>
         </View>
+      </TouchableOpacity>
+      <View style={styles.headerRight}>
+        <TouchableOpacity onPress={handleMoreOptions} style={styles.headerIconButton} accessibilityRole="button" accessibilityLabel={tr('chat.moreOptions')}>
+          <Ionicons name="ellipsis-vertical" size={22} color={theme.colors.text} />
+        </TouchableOpacity>
       </View>
+    </View>
+  );
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Pinned message bar                                                   */}
-      {/* ------------------------------------------------------------------ */}
-      {firstPinnedMessage != null && showPinnedBar && (
-        <PinnedBar
-          message={firstPinnedMessage}
-          onDismiss={() => setShowPinnedBar(false)}
-        />
-      )}
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Messages list                                                        */}
-      {/* ------------------------------------------------------------------ */}
-      <View style={styles.listContainer}>
-        <FlashList
-          ref={listRef}
-          data={listData}
-          keyExtractor={keyExtractor}
-          renderItem={renderItem}
-          getItemType={getItemType}
-          inverted
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingVertical: theme.spacing.sm,
-            paddingBottom: theme.spacing.md,
-          }}
-          ListEmptyComponent={
-            <View style={styles.emptyMessages}>
-              <EmptyState
-                icon="💬"
-                title={isLoadingMessages ? 'Yuklanmoqda…' : "Hali xabar yo'q"}
-                subtitle={isLoadingMessages ? '' : 'Birinchi xabarni yozing'}
-              />
-            </View>
-          }
-          // Keyboard handling
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-        />
-
-        {/* Typing indicator sits above the input and is part of the scroll area */}
-        {isTyping && (
-          <TypingIndicatorBar
-            name={chat?.otherUser?.firstName ?? chat?.name ?? 'Someone'}
-          />
-        )}
-      </View>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Message input                                                        */}
-      {/* ------------------------------------------------------------------ */}
+  const bottom =
+    inputMode === 'mute' ? (
+      <BottomButton
+        label={chat?.isMuted ? tr('chat.unmute') : tr('chat.mute')}
+        onPress={() => void setChatMuted(chatId, !(chat?.isMuted ?? false)).catch(fail)}
+      />
+    ) : inputMode === 'join' ? (
+      <BottomButton
+        label={tr('chat.join')}
+        onPress={() =>
+          setChatJoined(chatId, true)
+            .then(() => getInputMode(chatId))
+            .then((r) => {
+              setInputMode(r.mode);
+              setIsBroadcast(r.isBroadcast);
+            })
+            .catch(fail)
+        }
+      />
+    ) : (
       <MessageInput
         chatId={chatId}
         replyingTo={replyingTo}
+        editing={editing}
+        placeholder={isBroadcast ? tr('chat.broadcastPlaceholder') : tr('chat.messagePlaceholder')}
+        initialText={initialDraft}
         onSendText={handleSendText}
         onSendVoice={handleSendVoice}
-        onAttachmentPress={handleAttachmentPress}
+        onSendMedia={handleSendMedia}
         onCancelReply={() => setReplyingTo(null)}
+        onCancelEdit={() => setEditing(null)}
+        onTextChange={(v) => {
+          if (!editingRef.current) draftRef.current = v;
+        }}
       />
+    );
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Context menu                                                         */}
-      {/* ------------------------------------------------------------------ */}
-      <ContextMenu
-        visible={contextMenuMessage !== null}
-        message={contextMenuMessage}
-        isOwnMessage={contextMenuMessage !== null && isOwnMessage(contextMenuMessage)}
-        onClose={handleContextMenuClose}
-        onReact={handleReact}
-        onReply={handleReplyFromMenu}
-        onCopy={handleCopy}
-        onPin={handlePin}
-        onDelete={handleDelete}
-      />
+  const showPinned = pinned != null && hiddenPinnedId !== pinned.id && !search;
+
+  return (
+    <ChatLinkContext.Provider value={linkHandlers}>
+      <SafeAreaView style={[styles.root, { backgroundColor: theme.colors.background }]} edges={['top']}>
+        {header}
+
+        {showPinned ? (
+          <PinnedBar message={pinned} onPress={() => void jumpTo(pinned.id)} onDismiss={() => setHiddenPinnedId(pinned.id)} />
+        ) : null}
+
+        <View style={styles.listContainer}>
+          <ChatBackground />
+          {isLoading && chatMessages.length === 0 ? (
+            <LoadingState message={tr('chat.loadingMessages')} />
+          ) : (
+            <FlashList
+              ref={listRef}
+              data={listData}
+              keyExtractor={keyExtractor}
+              renderItem={renderItem}
+              getItemType={getItemType}
+              extraData={highlightId}
+              inverted
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingVertical: theme.spacing.sm }}
+              onEndReached={handleEndReached}
+              onEndReachedThreshold={0.5}
+              ListEmptyComponent={
+                <View style={styles.emptyMessages}>
+                  <EmptyState icon="💬" title={tr('chat.noMessages')} subtitle={inputMode === 'input' ? tr('chat.noMessagesHint') : undefined} />
+                </View>
+              }
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+            />
+          )}
+          {toast ? (
+            <Animated.View entering={FadeIn.duration(150)} exiting={FadeOut.duration(200)} style={styles.toast} pointerEvents="none">
+              <Text style={styles.toastText}>{toast}</Text>
+            </Animated.View>
+          ) : null}
+        </View>
+
+        {bottom}
+
+        <ContextMenu
+          visible={menu !== null}
+          reactions={menuReactions}
+          chosen={menuChosen}
+          options={menu?.options ?? []}
+          onReact={handleReact}
+          onClose={() => setMenu(null)}
+        />
+      </SafeAreaView>
+    </ChatLinkContext.Provider>
+  );
+}
+
+function BottomButton({ label, onPress }: { label: string; onPress: () => void }) {
+  const theme = useTheme();
+  return (
+    <SafeAreaView edges={['bottom']} style={{ backgroundColor: theme.colors.inputBackground }}>
+      <TouchableOpacity
+        onPress={onPress}
+        style={[styles.bottomButton, { borderTopColor: theme.colors.border }]}
+        accessibilityRole="button"
+      >
+        <Text style={[theme.textStyles.buttonMedium, { color: theme.colors.primary }]}>{label}</Text>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
+
+/** Faqat media (matnsiz rasm/video/fayl) — "Nusxalash" ko'rsatilmaydi. */
+function isMediaOnly(m: ChatMessage): boolean {
+  return m.type !== 'text' && m.type !== 'system' && !m.text;
+}
+
+const EMPTY: ChatMessage[] = [];
+/** Sarlavha menyusi uchun (reaksiyalarsiz) bo'sh xabar. */
+const SENTINEL = { id: '', isService: true, reactions: [] } as unknown as ChatMessage;
 
 // ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
+  root: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', height: 56, borderBottomWidth: StyleSheet.hairlineWidth },
+  backButton: { padding: 6 },
+  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', marginHorizontal: 4 },
+  headerTitleGroup: { flex: 1, justifyContent: 'center' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', paddingRight: 4 },
+  headerIconButton: { padding: 6 },
+  searchInput: { flex: 1, fontSize: 17, paddingVertical: 6, paddingHorizontal: 6 },
+  listContainer: { flex: 1 },
+  emptyMessages: { flex: 1, minHeight: 400 },
+  bottomButton: { height: 50, alignItems: 'center', justifyContent: 'center', borderTopWidth: StyleSheet.hairlineWidth },
+  toast: {
+    position: 'absolute',
+    bottom: 16,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    maxWidth: '86%',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 56,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  backButton: {
-    padding: 6,
-  },
-  headerCenter: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 4,
-  },
-  headerTitleGroup: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingRight: 4,
-  },
-  headerIconButton: {
-    padding: 6,
-  },
-  listContainer: {
-    flex: 1,
-  },
-  emptyMessages: {
-    // FlashList 2 empty state'ni inverted qilmaydi — qo'shimcha aylantirish kerak emas.
-    flex: 1,
-    minHeight: 400,
-  },
+  toastText: { color: '#FFFFFF', fontSize: 14, textAlign: 'center' },
 });

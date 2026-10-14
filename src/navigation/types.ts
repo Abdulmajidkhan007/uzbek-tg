@@ -57,4 +57,27 @@ export type SettingsStackParamList = {
   Sessions: undefined;
   Storage: undefined;
   ChatFolders: undefined;
+  ChatFolderEdit: { folderId?: number };
+  Language: undefined;
+  PrivacyRule: { setting: PrivacySettingKey };
+  TwoStepVerification: undefined;
+  ChatSettings: undefined;
+  ChatWallpaper: undefined;
+  DataStorage: undefined;
+  DataUsage: undefined;
+  AutoDownload: { network: 'mobile' | 'wifi' | 'roaming' };
+  Proxy: undefined;
 };
+
+/** TDLib userPrivacySetting* turlari (qisqa nom). */
+export type PrivacySettingKey =
+  | 'showStatus'
+  | 'showProfilePhoto'
+  | 'showPhoneNumber'
+  | 'showBio'
+  | 'showBirthdate'
+  | 'allowFindingByPhoneNumber'
+  | 'allowChatInvites'
+  | 'allowCalls'
+  | 'showLinkInForwardedMessages'
+  | 'allowPrivateVoiceAndVideoNoteMessages';
