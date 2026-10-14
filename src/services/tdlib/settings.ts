@@ -387,3 +387,27 @@ export function errorText(e: unknown): string {
   if (e instanceof TdError || e instanceof Error) return e.message;
   return String(e);
 }
+
+// ---------------------------------------------------------------------------
+// Muddatlarni matnga aylantirish (tarjima funksiyasi tashqaridan beriladi)
+// ---------------------------------------------------------------------------
+
+type Plural = (key: string, n: number) => string;
+
+/** Kunlarni "1 yil", "6 oy", "1 hafta", "3 kun" ko'rinishida. */
+export function formatDays(days: number, p: Plural): string {
+  if (days >= 365 && days % 365 === 0) return p('settings.time.years', days / 365);
+  if (days >= 28) {
+    // Oy uzunligi turlicha (30/31 kun) — yaqin qiymat oyga yaxlitlanadi.
+    const months = Math.round(days / 30.4);
+    if (Math.abs(months * 30.4 - days) <= 3) return p('settings.time.months', months);
+  }
+  if (days >= 7 && days % 7 === 0) return p('settings.time.weeks', days / 7);
+  return p('settings.time.days', days);
+}
+
+/** Soniyalarni (avto-o'chirish taymeri) matnga. 0 — chaqiruvchi o'zi "O'chirilgan" deb ko'rsatadi. */
+export function formatSeconds(seconds: number, p: Plural): string {
+  if (seconds % 86400 === 0) return formatDays(seconds / 86400, p);
+  return p('settings.time.hours', Math.max(1, Math.round(seconds / 3600)));
+}

@@ -6,6 +6,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  type GestureResponderEvent,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -35,6 +36,8 @@ import {
 } from '@/services/tdlib/chats';
 import type { ChatStackParamList } from '@/navigation/types';
 import { showActionSheet, showAlert } from '@/components/ui/Dialog';
+import { toggleThemeAnimated } from '@/components/ui/ThemeReveal';
+import { t, useT } from '@/i18n';
 
 import ChatListItem from '@/components/chat/ChatListItem';
 import EmptyState from '@/components/common/EmptyState';
@@ -45,7 +48,7 @@ const EMPTY: Chat[] = [];
 
 function errorText(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
-  if (/pinned/i.test(msg)) return "Qadalgan chatlar soni chegarasiga yetdingiz.";
+  if (/pinned/i.test(msg)) return t('main.err.pinnedLimit');
   return msg;
 }
 
@@ -53,54 +56,60 @@ function errorText(e: unknown): string {
 // Uzoq bosish menyusi
 // ---------------------------------------------------------------------------
 
-function openChatMenu(chat: Chat, key: string): void {
+function openChatMenu(chat: Chat, key: string, displayName: string): void {
   const run = (p: Promise<unknown>) =>
-    p.catch((e) => showAlert('Xatolik', errorText(e)));
+    p.catch((e) => showAlert(t('common.error'), errorText(e)));
 
   const options = [
     {
-      text: chat.isPinned ? 'Qadashni bekor qilish' : 'Qadash',
+      text: chat.isPinned ? t('main.menu.unpin') : t('main.menu.pin'),
       icon: chat.isPinned ? 'pin-outline' : 'pin',
       onPress: () => void run(setChatPinned(chat.id, key, !chat.isPinned)),
     },
     {
-      text: chat.isMuted ? 'Ovozni yoqish' : "Ovozsiz qilish",
+      text: chat.isMuted ? t('main.menu.unmute') : t('main.menu.mute'),
       icon: chat.isMuted ? 'volume-high-outline' : 'volume-mute-outline',
       onPress: () => void run(setChatMuted(chat.id, !chat.isMuted)),
     },
   ];
   if (chat.unreadCount > 0 || chat.isMarkedUnread) {
     options.push({
-      text: "O'qilgan deb belgilash",
+      text: t('main.menu.markRead'),
       icon: 'checkmark-done-outline',
       onPress: () => void run(markChatRead(chat.id)),
     });
   }
   options.push({
-    text: chat.isArchived ? 'Arxivdan chiqarish' : 'Arxivlash',
+    text: chat.isArchived ? t('main.menu.unarchive') : t('main.menu.archive'),
     icon: chat.isArchived ? 'arrow-undo-outline' : 'archive-outline',
     onPress: () => void run(setChatArchived(chat.id, !chat.isArchived)),
   });
 
   const isGroup = chat.type !== 'private';
+  const isChannel = chat.type === 'channel';
+  const actionText = isGroup
+    ? isChannel
+      ? t('main.menu.leaveChannel')
+      : t('main.menu.leaveGroup')
+    : t('main.menu.deleteChat');
   showActionSheet({
-    title: chat.name,
+    title: displayName,
     options: [
       ...options,
       {
-        text: isGroup ? (chat.type === 'channel' ? 'Kanaldan chiqish' : 'Guruhdan chiqish') : "Chatni o'chirish",
+        text: actionText,
         icon: isGroup ? 'exit-outline' : 'trash-outline',
         destructive: true,
         onPress: () =>
           showAlert(
-            isGroup ? 'Chiqish' : "Chatni o'chirish",
+            actionText,
             isGroup
-              ? `"${chat.name}" dan chiqmoqchimisiz?`
-              : `"${chat.name}" bilan yozishmalar sizda o'chiriladi.`,
+              ? t(isChannel ? 'main.confirm.leaveChannel' : 'main.confirm.leaveGroup', { name: chat.name })
+              : t('main.confirm.deleteChat', { name: displayName }),
             [
-              { text: 'Bekor qilish', style: 'cancel' },
+              { text: t('common.cancel'), style: 'cancel' },
               {
-                text: isGroup ? 'Chiqish' : "O'chirish",
+                text: isGroup ? t('main.confirm.leave') : t('common.delete'),
                 style: 'destructive',
                 onPress: () => void run(deleteChat(chat.id)),
               },
@@ -125,6 +134,7 @@ interface ChatListBodyProps {
 
 function ChatListBody({ listKey, data, header, emptyText }: ChatListBodyProps): React.JSX.Element {
   const theme = useTheme();
+  const tr = useT();
   const navigation = useNavigation<Nav>();
   const isLoading = useChatStore((s) => s.isLoadingChats);
   const [refreshing, setRefreshing] = useState(false);
@@ -133,10 +143,12 @@ function ChatListBody({ listKey, data, header, emptyText }: ChatListBodyProps): 
     (chatId: string) => {
       const chat = data.find((c) => c.id === chatId);
       if (!chat) return;
+      const myId = useAuthStore.getState().currentUser?.id;
+      const saved = chat.type === 'private' && myId != null && chat.otherUser?.id === myId;
       navigation.navigate('ChatDetail', {
         chatId: chat.id,
         chatType: chat.type,
-        title: chat.name,
+        title: saved ? t('main.savedMessages') : chat.name,
         avatarUrl: chat.avatarUrl,
       });
     },
@@ -148,7 +160,9 @@ function ChatListBody({ listKey, data, header, emptyText }: ChatListBodyProps): 
       const chat = data.find((c) => c.id === chatId);
       if (!chat) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      openChatMenu(chat, listKey);
+      const myId = useAuthStore.getState().currentUser?.id;
+      const saved = chat.type === 'private' && myId != null && chat.otherUser?.id === myId;
+      openChatMenu(chat, listKey, saved ? t('main.savedMessages') : chat.name);
     },
     [data, listKey],
   );
@@ -174,7 +188,7 @@ function ChatListBody({ listKey, data, header, emptyText }: ChatListBodyProps): 
         isLoading && data.length === 0 ? (
           <ActivityIndicator style={{ marginTop: 60 }} color={theme.colors.primary} />
         ) : (
-          <EmptyState icon="💬" title="Chatlar yo'q" subtitle={emptyText} />
+          <EmptyState icon="💬" title={tr('main.empty.title')} subtitle={emptyText} />
         )
       }
       onEndReached={() => void loadMoreChats(listKey)}
@@ -188,6 +202,7 @@ function ChatListBody({ listKey, data, header, emptyText }: ChatListBodyProps): 
         />
       }
       contentContainerStyle={{ paddingBottom: 120 }}
+      extraData={tr.lang}
     />
   );
 }
@@ -199,18 +214,19 @@ function ChatListBody({ listKey, data, header, emptyText }: ChatListBodyProps): 
 function ArchiveRow({ chats, onPress }: { chats: Chat[]; onPress: () => void }): React.JSX.Element {
   const theme = useTheme();
   const c = theme.colors;
+  const tr = useT();
   const unread = chats.reduce((n, x) => n + (x.unreadCount > 0 ? 1 : 0), 0);
   return (
     <Pressable
       onPress={onPress}
       android_ripple={{ color: c.surfaceHighlight }}
-      style={[styles.archiveRow, { backgroundColor: c.background }]}
+      style={[styles.archiveRow, { backgroundColor: theme.isDark ? c.background : c.surface }]}
     >
       <View style={[styles.archiveAvatar, { backgroundColor: c.textTertiary }]}>
         <Ionicons name="archive" size={24} color="#FFFFFF" />
       </View>
       <View style={[styles.archiveContent, { borderBottomColor: c.border }]}>
-        <Text style={[styles.archiveTitle, { color: c.text }]}>Arxiv</Text>
+        <Text style={[styles.archiveTitle, { color: c.text }]}>{tr('main.archive')}</Text>
         <Text style={{ color: c.textSecondary, fontSize: 15 }} numberOfLines={1}>
           {chats
             .slice(0, 8)
@@ -231,10 +247,10 @@ function ArchiveRow({ chats, onPress }: { chats: Chat[]; onPress: () => void }):
 // Asosiy ekran
 // ---------------------------------------------------------------------------
 
-const CONNECTION_TEXT = {
-  connecting: 'Ulanmoqda...',
-  updating: 'Yangilanmoqda...',
-  waitingForNetwork: 'Tarmoq kutilmoqda...',
+const CONNECTION_KEY = {
+  connecting: 'main.conn.connecting',
+  updating: 'main.conn.updating',
+  waitingForNetwork: 'main.conn.waitingForNetwork',
 } as const;
 
 type Props = StackScreenProps<ChatStackParamList, 'ChatList'>;
@@ -242,6 +258,8 @@ type Props = StackScreenProps<ChatStackParamList, 'ChatList'>;
 export function ChatListScreen({ navigation }: Props): React.JSX.Element {
   const theme = useTheme();
   const c = theme.colors;
+  const tr = useT();
+  const listBg = theme.isDark ? c.background : c.surface;
   const chats = useChatStore((s) => s.chats);
   const folders = useChatStore((s) => s.folders);
   const listChats = useChatStore((s) => s.listChats);
@@ -254,10 +272,10 @@ export function ChatListScreen({ navigation }: Props): React.JSX.Element {
 
   const tabs = useMemo(
     () => [
-      { key: 'main', name: 'Barcha chatlar', unread: allUnread },
+      { key: 'main', name: tr('main.allChats'), unread: allUnread },
       ...folders.map((f) => ({ key: `folder:${f.id}`, name: f.name, unread: f.unreadCount })),
     ],
-    [folders, allUnread],
+    [folders, allUnread, tr],
   );
 
   const archiveHeader =
@@ -266,21 +284,29 @@ export function ChatListScreen({ navigation }: Props): React.JSX.Element {
     ) : null;
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: c.background }]} edges={['top']}>
-      <View style={[styles.header, { backgroundColor: c.surface }]}>
+    <SafeAreaView style={[styles.root, { backgroundColor: listBg }]} edges={['top']}>
+      <View style={[styles.header, { backgroundColor: c.surface }, !theme.isDark && styles.headerLight]}>
         <View style={styles.titleRow}>
           {connection !== 'ready' ? (
             <ActivityIndicator size="small" color={c.textSecondary} style={{ marginRight: 10 }} />
           ) : null}
-          <Text style={[styles.title, { color: c.text }]} accessibilityRole="header">
-            {connection === 'ready' ? 'Uzbek TG' : CONNECTION_TEXT[connection]}
+          <Text style={[styles.title, { color: c.text }]} accessibilityRole="header" numberOfLines={1}>
+            {connection === 'ready' ? 'Uzbek TG' : tr(CONNECTION_KEY[connection])}
           </Text>
         </View>
+        <TouchableOpacity
+          onPress={(e: GestureResponderEvent) => void toggleThemeAnimated(e.nativeEvent.pageX, e.nativeEvent.pageY)}
+          style={styles.headerIcon}
+          accessibilityRole="button"
+          accessibilityLabel={theme.isDark ? tr('main.dayMode') : tr('main.nightMode')}
+        >
+          <Ionicons name={theme.isDark ? 'sunny-outline' : 'moon-outline'} size={23} color={c.text} />
+        </TouchableOpacity>
         <TouchableOpacity
           onPress={() => navigation.navigate('Search')}
           style={styles.headerIcon}
           accessibilityRole="button"
-          accessibilityLabel="Qidirish"
+          accessibilityLabel={tr('common.search')}
         >
           <Ionicons name="search" size={23} color={c.text} />
         </TouchableOpacity>
@@ -289,15 +315,15 @@ export function ChatListScreen({ navigation }: Props): React.JSX.Element {
       {folders.length > 0 ? (
         <View style={[styles.tabsWrap, { backgroundColor: c.surface, borderBottomColor: c.border }]}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
-            {tabs.map((t) => {
-              const on = t.key === active;
+            {tabs.map((tab) => {
+              const on = tab.key === active;
               return (
-                <Pressable key={t.key} onPress={() => setActive(t.key)} style={styles.tab}>
+                <Pressable key={tab.key} onPress={() => setActive(tab.key)} style={styles.tab}>
                   <View style={styles.tabInner}>
-                    <Text style={[styles.tabText, { color: on ? c.primary : c.textSecondary }]}>{t.name}</Text>
-                    {t.unread > 0 ? (
+                    <Text style={[styles.tabText, { color: on ? c.primary : c.textSecondary }]}>{tab.name}</Text>
+                    {tab.unread > 0 ? (
                       <View style={[styles.tabBadge, { backgroundColor: on ? c.primary : c.textTertiary }]}>
-                        <Text style={styles.tabBadgeText}>{t.unread}</Text>
+                        <Text style={styles.tabBadgeText}>{tab.unread}</Text>
                       </View>
                     ) : null}
                   </View>
@@ -314,14 +340,14 @@ export function ChatListScreen({ navigation }: Props): React.JSX.Element {
         listKey={active}
         data={data}
         header={archiveHeader}
-        emptyText={active === 'main' ? 'Yangi suhbat boshlash uchun qalam tugmasini bosing.' : "Bu papkada chat yo'q."}
+        emptyText={active === 'main' ? tr('main.empty.main') : tr('main.empty.folder')}
       />
 
       <TouchableOpacity
         onPress={() => navigation.getParent()?.navigate('ContactsTab')}
         style={[styles.fab, { backgroundColor: c.primary }, theme.shadows.md]}
         accessibilityRole="button"
-        accessibilityLabel="Yangi xabar"
+        accessibilityLabel={tr('main.newMessage')}
         activeOpacity={0.85}
       >
         <Ionicons name="pencil" size={24} color="#FFFFFF" />
@@ -335,18 +361,23 @@ type ArchiveProps = StackScreenProps<ChatStackParamList, 'ArchivedChats'>;
 export function ArchivedChatsScreen({ navigation }: ArchiveProps): React.JSX.Element {
   const theme = useTheme();
   const c = theme.colors;
+  const tr = useT();
   const archive = useChatStore((s) => s.listChats.archive ?? EMPTY);
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: c.background }]} edges={['top']}>
-      <View style={[styles.header, { backgroundColor: c.surface }]}>
+    <SafeAreaView style={[styles.root, { backgroundColor: theme.isDark ? c.background : c.surface }]} edges={['top']}>
+      <View style={[styles.header, { backgroundColor: c.surface }, !theme.isDark && styles.headerLight]}>
         <View style={styles.titleRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.back} accessibilityLabel="Orqaga">
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.back}
+            accessibilityLabel={tr('common.back')}
+          >
             <Ionicons name="arrow-back" size={24} color={c.text} />
           </TouchableOpacity>
-          <Text style={[styles.title, { color: c.text }]}>Arxiv</Text>
+          <Text style={[styles.title, { color: c.text }]}>{tr('main.archive')}</Text>
         </View>
       </View>
-      <ChatListBody listKey="archive" data={archive} emptyText="Arxivlangan chatlar shu yerda turadi." />
+      <ChatListBody listKey="archive" data={archive} emptyText={tr('main.empty.archive')} />
     </SafeAreaView>
   );
 }
@@ -360,9 +391,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
   },
+  headerLight: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(0,0,0,0.08)' },
   titleRow: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  title: { fontSize: 21, fontWeight: '700' },
-  headerIcon: { padding: 6 },
+  title: { fontSize: 21, fontWeight: '700', flexShrink: 1 },
+  headerIcon: { padding: 6, marginLeft: 8 },
   back: { paddingRight: 18, paddingVertical: 6 },
   tabsWrap: { borderBottomWidth: StyleSheet.hairlineWidth },
   tabs: { paddingHorizontal: 6 },

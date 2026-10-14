@@ -10,6 +10,7 @@ import { ThemeRevealHost } from '@/components/ui/ThemeReveal';
 import { useTheme } from '@/hooks/useTheme';
 import { initAuthStore, useAuthStore } from '@/stores/auth.store';
 import { initUIStore } from '@/stores/ui.store';
+import { useT } from '@/i18n';
 
 function AppContent(): React.JSX.Element {
   const theme = useTheme();
@@ -84,15 +85,12 @@ function AppShell(): React.JSX.Element {
 
 /** TDLib ishga tushmasa (kalit yo'q yoki native kutubxona yo'q) — sababni ko'rsatadi. */
 function StartErrorScreen({ error }: { error: string }): React.JSX.Element {
-  const text =
-    error === 'NO_API_KEYS'
-      ? "Bu APK Telegram API kalitlarisiz yig'ilgan (TG_API_ID / TG_API_HASH). " +
-        "GitHub → Settings → Secrets → Actions'ga qo'shib, APK'ni qayta yig'ing."
-      : `Telegram kutubxonasi ishga tushmadi:\n${error}`;
+  const t = useT();
+  const text = error === 'NO_API_KEYS' ? t('main.startError.noKeys') : t('main.startError.tdlib', { error });
   return (
     <View style={{ flex: 1, backgroundColor: '#0F1923', justifyContent: 'center', padding: 24 }}>
       <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '700', marginBottom: 12 }}>
-        Ulanib bo'lmadi
+        {t('main.startError.title')}
       </Text>
       <Text style={{ color: '#B0BEC5', fontSize: 15, lineHeight: 22 }}>{text}</Text>
     </View>

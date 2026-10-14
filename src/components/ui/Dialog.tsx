@@ -11,6 +11,7 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '@/hooks/useTheme';
+import { t, useT } from '@/i18n';
 
 export interface DialogButton {
   text?: string;
@@ -44,7 +45,7 @@ export function showAlert(
   buttons?: DialogButton[],
   _options?: { cancelable?: boolean },
 ): void {
-  open({ kind: 'alert', title, message, buttons: buttons && buttons.length > 0 ? buttons : [{ text: 'OK' }] });
+  open({ kind: 'alert', title, message, buttons: buttons && buttons.length > 0 ? buttons : [{ text: t('common.ok') }] });
 }
 
 export function showActionSheet(sheet: { title?: string; options: SheetOption[] }): void {
@@ -53,6 +54,7 @@ export function showActionSheet(sheet: { title?: string; options: SheetOption[] 
 
 export function DialogHost(): React.JSX.Element {
   const theme = useTheme();
+  const tr = useT();
   const insets = useSafeAreaInsets();
   const [state, setState] = useState<DialogState>(null);
 
@@ -101,7 +103,7 @@ export function DialogHost(): React.JSX.Element {
                       b.style === 'cancel' && { fontWeight: '500' },
                     ]}
                   >
-                    {(b.text ?? 'OK').toUpperCase()}
+                    {(b.text ?? tr('common.ok')).toUpperCase()}
                   </Text>
                 </Pressable>
               ))}

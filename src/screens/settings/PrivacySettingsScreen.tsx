@@ -1,588 +1,199 @@
-import React, { useCallback, useState } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  Switch,
-  TouchableOpacity,
-  Platform,
-  Modal,
-  Pressable,
-  StyleSheet,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Ionicons from 'react-native-vector-icons/Ionicons';
-import * as Haptics from '@/utils/haptics';
+/**
+ * Maxfiylik va xavfsizlik (Telegram Android'dagi kabi). Barcha qiymatlar
+ * TDLib'dan: getUserPrivacySettingRules, getPasswordState,
+ * getDefaultMessageAutoDeleteTime, getActiveSessions, getBlockedMessageSenders,
+ * getAccountTtl.
+ */
+import React, { useCallback, useEffect, useState } from 'react';
+import { ScrollView, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { StackScreenProps } from '@react-navigation/stack';
 
 import { useTheme } from '@/hooks/useTheme';
-import Divider from '@/components/ui/Divider';
-import type { SettingsStackParamList } from '@/navigation/types';
-import { showAlert } from '@/components/ui/Dialog';
+import { useT, type Translator } from '@/i18n';
+import { SettingsCard, SettingsRow } from '@/components/ui/SettingsRow';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { showActionSheet, showAlert } from '@/components/ui/Dialog';
+import type { PrivacySettingKey, SettingsStackParamList } from '@/navigation/types';
+import {
+  errorText,
+  formatDays,
+  formatSeconds,
+  getAccountTtl,
+  getBlockedCount,
+  getDefaultAutoDelete,
+  getPasswordState,
+  getPrivacyRules,
+  getSessions,
+  setAccountTtl,
+  setDefaultAutoDelete,
+  summarizeRules,
+  type PrivacySummary,
+} from '@/services/tdlib/settings';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 type Props = StackScreenProps<SettingsStackParamList, 'PrivacySettings'>;
 
-type VisibilityOption = 'Everybody' | 'My Contacts' | 'Nobody';
-
-interface PrivacyField {
-  key: string;
-  label: string;
-  options: VisibilityOption[];
-  value: VisibilityOption;
-}
-
-interface ActiveSessionInfo {
-  device: string;
-  platform: string;
-  location: string;
-}
-
-const ALL_OPTIONS: VisibilityOption[] = ['Everybody', 'My Contacts', 'Nobody'];
-const CONTACTS_NOBODY: VisibilityOption[] = ['My Contacts', 'Nobody'];
-
-const MOCK_SESSION: ActiveSessionInfo = {
-  device: 'iPhone 15 Pro',
-  platform: 'iOS 17.4',
-  location: 'San Francisco, US',
-};
-
-const INITIAL_PRIVACY_FIELDS: PrivacyField[] = [
-  { key: 'phone', label: 'Phone Number', options: ALL_OPTIONS, value: 'Nobody' },
-  { key: 'lastSeen', label: 'Last Seen & Online', options: ALL_OPTIONS, value: 'My Contacts' },
-  { key: 'photo', label: 'Profile Photo', options: ALL_OPTIONS, value: 'Everybody' },
-  { key: 'bio', label: 'About', options: ALL_OPTIONS, value: 'Everybody' },
-  { key: 'calls', label: 'Calls', options: CONTACTS_NOBODY, value: 'My Contacts' },
-  { key: 'groups', label: 'Groups & Channels', options: CONTACTS_NOBODY, value: 'My Contacts' },
+const PRIVACY_ROWS: { key: PrivacySettingKey; label: string; icon: string; color: string }[] = [
+  { key: 'showPhoneNumber', label: 'settings.privacy.phone', icon: 'call', color: '#5DBB5A' },
+  { key: 'showStatus', label: 'settings.privacy.lastSeen', icon: 'time', color: '#3E9BEA' },
+  { key: 'showProfilePhoto', label: 'settings.privacy.photos', icon: 'person-circle', color: '#E5574F' },
+  { key: 'showBio', label: 'settings.privacy.bio', icon: 'information-circle', color: '#F59B2B' },
+  { key: 'showBirthdate', label: 'settings.privacy.birthdate', icon: 'gift', color: '#E05C9C' },
+  { key: 'showLinkInForwardedMessages', label: 'settings.privacy.forwards', icon: 'arrow-redo', color: '#3E9BEA' },
+  { key: 'allowCalls', label: 'settings.privacy.calls', icon: 'call-outline', color: '#5DBB5A' },
+  { key: 'allowPrivateVoiceAndVideoNoteMessages', label: 'settings.privacy.voice', icon: 'mic', color: '#9C6ADE' },
+  { key: 'allowChatInvites', label: 'settings.privacy.invites', icon: 'people', color: '#F59B2B' },
 ];
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-const SectionTitle = React.memo(function SectionTitle({ title }: { title: string }) {
-  const theme = useTheme();
-  return (
-    <Text
-      style={{
-        color: theme.colors.textSecondary,
-        fontSize: theme.fontSizes.sm,
-        fontWeight: theme.fontWeights.semibold,
-        paddingHorizontal: theme.spacing.lg,
-        paddingTop: theme.spacing.xl,
-        paddingBottom: theme.spacing.xs,
-        textTransform: 'uppercase',
-        letterSpacing: theme.letterSpacing.wide,
-      }}
-    >
-      {title}
-    </Text>
-  );
-});
+const AUTO_DELETE_OPTIONS = [0, 86400, 7 * 86400, 31 * 86400];
+const ACCOUNT_TTL_OPTIONS = [30, 90, 180, 365];
 
-// ---------------------------------------------------------------------------
-// Screen
-// ---------------------------------------------------------------------------
+/** "Kontaktlarim (-1, +3)" — Telegram'dagi kabi. */
+export function privacyValue(s: PrivacySummary | undefined, t: Translator): string | undefined {
+  if (!s) return undefined;
+  const base =
+    s.base === 'everybody' ? t('common.everybody') : s.base === 'contacts' ? t('common.myContacts') : t('common.nobody');
+  const ex: string[] = [];
+  if (s.restrictCount > 0) ex.push(`-${s.restrictCount}`);
+  if (s.allowCount > 0) ex.push(`+${s.allowCount}`);
+  return ex.length > 0 ? `${base} (${ex.join(', ')})` : base;
+}
+
 export function PrivacySettingsScreen({ navigation }: Props): React.JSX.Element {
-  const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const c = useTheme().colors;
+  const t = useT();
+  const [privacy, setPrivacy] = useState<Partial<Record<PrivacySettingKey, PrivacySummary>>>({});
+  const [hasPassword, setHasPassword] = useState<boolean | null>(null);
+  const [autoDelete, setAutoDelete] = useState<number | null>(null);
+  const [sessionsCount, setSessionsCount] = useState<number | null>(null);
+  const [blockedCount, setBlockedCount] = useState<number | null>(null);
+  const [ttlDays, setTtlDays] = useState<number | null>(null);
 
-  const [privacyFields, setPrivacyFields] = useState<PrivacyField[]>(INITIAL_PRIVACY_FIELDS);
-  const [twoStep, setTwoStep] = useState(false);
-  const [activeField, setActiveField] = useState<PrivacyField | null>(null);
-  const [sessionModalVisible, setSessionModalVisible] = useState(false);
-
-  const openPicker = useCallback((field: PrivacyField) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setActiveField(field);
+  const load = useCallback(() => {
+    for (const row of PRIVACY_ROWS) {
+      getPrivacyRules(row.key)
+        .then((rules) => setPrivacy((p) => ({ ...p, [row.key]: summarizeRules(rules) })))
+        .catch(() => undefined);
+    }
+    getPasswordState()
+      .then((s) => setHasPassword(s.has_password))
+      .catch(() => undefined);
+    getDefaultAutoDelete()
+      .then(setAutoDelete)
+      .catch(() => undefined);
+    getSessions()
+      .then((r) => setSessionsCount(r.sessions.length))
+      .catch(() => undefined);
+    getBlockedCount()
+      .then(setBlockedCount)
+      .catch(() => undefined);
+    getAccountTtl()
+      .then(setTtlDays)
+      .catch(() => undefined);
   }, []);
 
-  const selectOption = useCallback(
-    (option: VisibilityOption) => {
-      if (!activeField) return;
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      setPrivacyFields((prev) =>
-        prev.map((f) => (f.key === activeField.key ? { ...f, value: option } : f))
-      );
-      setActiveField(null);
-    },
-    [activeField]
-  );
+  // Ichki ekrandan qaytganda qiymatlar yangilanadi.
+  useEffect(() => navigation.addListener('focus', load), [navigation, load]);
 
-  const handleDeleteAccount = useCallback(() => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    showAlert(
-      'Delete Account',
-      'If you delete your account, all messages and chats will be permanently lost. This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete Account', style: 'destructive', onPress: () => {} },
-      ]
-    );
-  }, []);
+  const autoDeleteLabel = (s: number) => (s === 0 ? t('common.off') : formatSeconds(s, t.p));
 
-  const handleOpenSessions = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSessionModalVisible(true);
-  }, []);
+  const pickAutoDelete = () =>
+    showActionSheet({
+      title: t('settings.privacy.autoDeleteTitle'),
+      options: AUTO_DELETE_OPTIONS.map((sec) => ({
+        text: autoDeleteLabel(sec) + (sec === autoDelete ? '  ✓' : ''),
+        onPress: () => {
+          const prev = autoDelete;
+          setAutoDelete(sec);
+          setDefaultAutoDelete(sec).catch((e) => {
+            setAutoDelete(prev);
+            showAlert(t('common.error'), errorText(e));
+          });
+        },
+      })),
+    });
 
-  const handleCloseActiveField = useCallback(() => setActiveField(null), []);
-  const handleCloseSession = useCallback(() => setSessionModalVisible(false), []);
+  const pickTtl = () =>
+    showActionSheet({
+      title: t('settings.privacy.ifAwayTitle'),
+      options: ACCOUNT_TTL_OPTIONS.map((days) => ({
+        text: formatDays(days, t.p) + (days === ttlDays ? '  ✓' : ''),
+        onPress: () => {
+          const prev = ttlDays;
+          setTtlDays(days);
+          setAccountTtl(days).catch((e) => {
+            setTtlDays(prev);
+            showAlert(t('common.error'), errorText(e));
+          });
+        },
+      })),
+    });
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: insets.top + theme.spacing.sm,
-            paddingBottom: theme.spacing.md,
-            paddingHorizontal: theme.spacing.lg,
-            backgroundColor: theme.colors.background,
-            borderBottomColor: theme.colors.border,
-          },
-        ]}
-      >
-        <TouchableOpacity
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            navigation.goBack();
-          }}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <Ionicons name="chevron-back" size={26} color={theme.colors.primary} />
-        </TouchableOpacity>
-        <Text
-          style={[
-            theme.textStyles.headingSmall,
-            { color: theme.colors.text, flex: 1, marginLeft: theme.spacing.sm },
-          ]}
-        >
-          Privacy
-        </Text>
-      </View>
+    <SafeAreaView style={[styles.root, { backgroundColor: c.background }]} edges={['top']}>
+      <ScreenHeader title={t('settings.privacy.title')} onBack={() => navigation.goBack()} />
+      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+        <SettingsCard title={t('settings.privacy.security')}>
+          <SettingsRow
+            icon="key"
+            color="#3E9BEA"
+            label={t('settings.privacy.twoStep')}
+            value={hasPassword === null ? undefined : hasPassword ? t('common.on') : t('common.off')}
+            onPress={() => navigation.navigate('TwoStepVerification')}
+          />
+          <SettingsRow
+            icon="timer"
+            color="#9C6ADE"
+            label={t('settings.privacy.autoDelete')}
+            value={autoDelete === null ? undefined : autoDeleteLabel(autoDelete)}
+            onPress={autoDelete === null ? undefined : pickAutoDelete}
+          />
+          <SettingsRow
+            icon="phone-portrait"
+            color="#F59B2B"
+            label={t('settings.main.devices')}
+            value={sessionsCount === null ? undefined : String(sessionsCount)}
+            onPress={() => navigation.navigate('Sessions')}
+          />
+          <SettingsRow
+            icon="ban"
+            color="#E5574F"
+            label={t('settings.privacy.blocked')}
+            value={blockedCount === null ? undefined : String(blockedCount)}
+            onPress={() => navigation.navigate('BlockedUsers')}
+            last
+          />
+        </SettingsCard>
 
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + theme.spacing.xxxl }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Who can see my... */}
-        <SectionTitle title="Who Can See My..." />
-        <View style={{ paddingHorizontal: theme.spacing.lg }}>
-          {privacyFields.map((field, idx) => {
-            const isFirst = idx === 0;
-            const isLast = idx === privacyFields.length - 1;
-            return (
-              <React.Fragment key={field.key}>
-                <TouchableOpacity
-                  onPress={() => openPicker(field)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${field.label}: ${field.value}`}
-                >
-                  <View
-                    style={[
-                      styles.row,
-                      {
-                        paddingHorizontal: theme.spacing.lg,
-                        paddingVertical: theme.spacing.md,
-                        backgroundColor: theme.colors.surfaceElevated,
-                        borderTopLeftRadius: isFirst ? theme.radius.md : 0,
-                        borderTopRightRadius: isFirst ? theme.radius.md : 0,
-                        borderBottomLeftRadius: isLast ? theme.radius.md : 0,
-                        borderBottomRightRadius: isLast ? theme.radius.md : 0,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        theme.textStyles.bodyMedium,
-                        { color: theme.colors.text, flex: 1 },
-                      ]}
-                    >
-                      {field.label}
-                    </Text>
-                    <Text
-                      style={[
-                        theme.textStyles.bodySmall,
-                        { color: theme.colors.textSecondary, marginRight: theme.spacing.xs },
-                      ]}
-                    >
-                      {field.value}
-                    </Text>
-                    <Ionicons name="chevron-forward" size={16} color={theme.colors.textTertiary} />
-                  </View>
-                </TouchableOpacity>
-                {!isLast && <Divider inset={theme.spacing.lg} />}
-              </React.Fragment>
-            );
-          })}
-        </View>
-
-        {/* Security */}
-        <SectionTitle title="Security" />
-        <View style={{ paddingHorizontal: theme.spacing.lg }}>
-          <View
-            style={[
-              styles.row,
-              {
-                paddingHorizontal: theme.spacing.lg,
-                paddingVertical: theme.spacing.md,
-                backgroundColor: theme.colors.surfaceElevated,
-                borderTopLeftRadius: theme.radius.md,
-                borderTopRightRadius: theme.radius.md,
-              },
-            ]}
-          >
-            <Text
-              style={[theme.textStyles.bodyMedium, { color: theme.colors.text, flex: 1 }]}
-            >
-              Two-Step Verification
-            </Text>
-            <Switch
-              value={twoStep}
-              onValueChange={(val) => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setTwoStep(val);
-              }}
-              trackColor={{ false: theme.colors.textTertiary, true: theme.colors.primary }}
-              thumbColor={Platform.OS === 'android' ? theme.colors.text : undefined}
+        <SettingsCard title={t('settings.privacy.section')}>
+          {PRIVACY_ROWS.map((row, i) => (
+            <SettingsRow
+              key={row.key}
+              icon={row.icon}
+              color={row.color}
+              label={t(row.label)}
+              value={privacyValue(privacy[row.key], t)}
+              onPress={() => navigation.navigate('PrivacyRule', { setting: row.key })}
+              last={i === PRIVACY_ROWS.length - 1}
             />
-          </View>
+          ))}
+        </SettingsCard>
 
-          <Divider inset={theme.spacing.lg} />
-
-          <TouchableOpacity
-            onPress={handleOpenSessions}
-            accessibilityRole="button"
-            accessibilityLabel="Active sessions"
-          >
-            <View
-              style={[
-                styles.row,
-                {
-                  paddingHorizontal: theme.spacing.lg,
-                  paddingVertical: theme.spacing.md,
-                  backgroundColor: theme.colors.surfaceElevated,
-                  borderBottomLeftRadius: theme.radius.md,
-                  borderBottomRightRadius: theme.radius.md,
-                },
-              ]}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={[theme.textStyles.bodyMedium, { color: theme.colors.text }]}>
-                  Active Sessions
-                </Text>
-                <Text
-                  style={[
-                    theme.textStyles.caption,
-                    { color: theme.colors.textSecondary, marginTop: 2 },
-                  ]}
-                >
-                  1 active session
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={theme.colors.textTertiary} />
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* Advanced */}
-        <SectionTitle title="Advanced" />
-        <View style={{ paddingHorizontal: theme.spacing.lg }}>
-          <TouchableOpacity
-            onPress={handleDeleteAccount}
-            accessibilityRole="button"
-            accessibilityLabel="Delete my account"
-          >
-            <View
-              style={[
-                styles.row,
-                {
-                  paddingHorizontal: theme.spacing.lg,
-                  paddingVertical: theme.spacing.md,
-                  backgroundColor: theme.colors.surfaceElevated,
-                  borderRadius: theme.radius.md,
-                },
-              ]}
-            >
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={[
-                    theme.textStyles.bodyMedium,
-                    { color: theme.colors.error, fontWeight: theme.fontWeights.medium },
-                  ]}
-                >
-                  Delete My Account
-                </Text>
-                <Text
-                  style={[
-                    theme.textStyles.caption,
-                    { color: theme.colors.textSecondary, marginTop: 2 },
-                  ]}
-                >
-                  All messages and chats will be lost
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={theme.colors.textTertiary} />
-            </View>
-          </TouchableOpacity>
-        </View>
+        <SettingsCard title={t('settings.privacy.deleteSection')} footer={t('settings.privacy.accountTtlFooter')}>
+          <SettingsRow
+            icon="trash"
+            color="#8E99A4"
+            label={t('settings.privacy.ifAway')}
+            value={ttlDays === null ? undefined : formatDays(ttlDays, t.p)}
+            onPress={ttlDays === null ? undefined : pickTtl}
+            last
+          />
+        </SettingsCard>
       </ScrollView>
-
-      {/* Privacy Option Picker Modal */}
-      <Modal
-        visible={activeField !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={handleCloseActiveField}
-      >
-        <Pressable
-          style={[styles.modalOverlay, { backgroundColor: theme.colors.overlay }]}
-          onPress={handleCloseActiveField}
-        >
-          <Pressable>
-            <View
-              style={[
-                styles.actionSheet,
-                {
-                  backgroundColor: theme.colors.surfaceElevated,
-                  borderTopLeftRadius: theme.radius.xl,
-                  borderTopRightRadius: theme.radius.xl,
-                  paddingBottom: insets.bottom + theme.spacing.lg,
-                },
-              ]}
-            >
-              <View
-                style={[styles.sheetHandle, { backgroundColor: theme.colors.textTertiary }]}
-              />
-              <Text
-                style={[
-                  theme.textStyles.headingSmall,
-                  {
-                    color: theme.colors.text,
-                    textAlign: 'center',
-                    paddingVertical: theme.spacing.lg,
-                    paddingHorizontal: theme.spacing.xl,
-                  },
-                ]}
-              >
-                {activeField?.label}
-              </Text>
-              <Divider />
-              {activeField?.options.map((option, idx) => (
-                <React.Fragment key={option}>
-                  <TouchableOpacity
-                    onPress={() => selectOption(option)}
-                    style={[
-                      styles.sheetOption,
-                      {
-                        paddingHorizontal: theme.spacing.xl,
-                        paddingVertical: theme.spacing.lg,
-                      },
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel={option}
-                    accessibilityState={{ selected: activeField?.value === option }}
-                  >
-                    <Text
-                      style={[
-                        theme.textStyles.bodyLarge,
-                        {
-                          color:
-                            activeField?.value === option
-                              ? theme.colors.primary
-                              : theme.colors.text,
-                          flex: 1,
-                        },
-                      ]}
-                    >
-                      {option}
-                    </Text>
-                    {activeField?.value === option && (
-                      <Ionicons name="checkmark" size={20} color={theme.colors.primary} />
-                    )}
-                  </TouchableOpacity>
-                  {idx < (activeField?.options.length ?? 0) - 1 && (
-                    <Divider inset={theme.spacing.xl} />
-                  )}
-                </React.Fragment>
-              ))}
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* Active Sessions Modal */}
-      <Modal
-        visible={sessionModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={handleCloseSession}
-      >
-        <Pressable
-          style={[styles.modalOverlay, { backgroundColor: theme.colors.overlay }]}
-          onPress={handleCloseSession}
-        >
-          <Pressable>
-            <View
-              style={[
-                styles.actionSheet,
-                {
-                  backgroundColor: theme.colors.surfaceElevated,
-                  borderTopLeftRadius: theme.radius.xl,
-                  borderTopRightRadius: theme.radius.xl,
-                  paddingBottom: insets.bottom + theme.spacing.lg,
-                },
-              ]}
-            >
-              <View
-                style={[styles.sheetHandle, { backgroundColor: theme.colors.textTertiary }]}
-              />
-              <Text
-                style={[
-                  theme.textStyles.headingSmall,
-                  {
-                    color: theme.colors.text,
-                    textAlign: 'center',
-                    paddingVertical: theme.spacing.lg,
-                    paddingHorizontal: theme.spacing.xl,
-                  },
-                ]}
-              >
-                Active Sessions
-              </Text>
-              <Divider />
-              <View
-                style={{
-                  paddingHorizontal: theme.spacing.xl,
-                  paddingVertical: theme.spacing.lg,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                }}
-              >
-                <View
-                  style={[
-                    styles.sessionIconBg,
-                    { backgroundColor: theme.colors.primary + '22' },
-                  ]}
-                >
-                  <Ionicons
-                    name="phone-portrait-outline"
-                    size={24}
-                    color={theme.colors.primary}
-                  />
-                </View>
-                <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
-                  <Text
-                    style={[
-                      theme.textStyles.bodyMedium,
-                      { color: theme.colors.text, fontWeight: theme.fontWeights.semibold },
-                    ]}
-                  >
-                    {MOCK_SESSION.device}
-                  </Text>
-                  <Text
-                    style={[
-                      theme.textStyles.bodySmall,
-                      { color: theme.colors.textSecondary, marginTop: 2 },
-                    ]}
-                  >
-                    {MOCK_SESSION.platform}
-                  </Text>
-                  <Text
-                    style={[
-                      theme.textStyles.bodySmall,
-                      { color: theme.colors.textSecondary },
-                    ]}
-                  >
-                    {MOCK_SESSION.location}
-                  </Text>
-                </View>
-                <View
-                  style={[styles.activeIndicator, { backgroundColor: theme.colors.onlineDot }]}
-                />
-              </View>
-              <Divider />
-              <TouchableOpacity
-                onPress={handleCloseSession}
-                style={[
-                  styles.sheetOption,
-                  {
-                    paddingHorizontal: theme.spacing.xl,
-                    paddingVertical: theme.spacing.lg,
-                    justifyContent: 'center',
-                  },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Close"
-              >
-                <Text
-                  style={[
-                    theme.textStyles.bodyLarge,
-                    { color: theme.colors.primary, textAlign: 'center' },
-                  ]}
-                >
-                  Close
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 52,
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  actionSheet: {
-    paddingTop: 8,
-  },
-  sheetHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  sheetOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  sessionIconBg: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  activeIndicator: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
+  root: { flex: 1 },
 });
