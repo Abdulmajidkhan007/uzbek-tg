@@ -6,18 +6,14 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'react-native';
 import { RootNavigator } from '@/navigation/RootNavigator';
 import { DialogHost } from '@/components/ui/Dialog';
+import { ThemeRevealHost } from '@/components/ui/ThemeReveal';
+import { useTheme } from '@/hooks/useTheme';
 import { initAuthStore, useAuthStore } from '@/stores/auth.store';
 import { initUIStore } from '@/stores/ui.store';
-import { useUIStore } from '@/stores/ui.store';
-import { darkTheme, lightTheme } from '@/theme';
-import { useColorScheme } from 'react-native';
 
 function AppContent(): React.JSX.Element {
-  const themeMode = useUIStore((s) => s.themeMode);
-  const systemScheme = useColorScheme();
-  const isDark =
-    themeMode === 'dark' || (themeMode === 'system' && systemScheme !== 'light');
-  const theme = isDark ? darkTheme : lightTheme;
+  const theme = useTheme();
+  const isDark = theme.isDark;
 
   return (
     <NavigationContainer
@@ -80,6 +76,7 @@ function AppShell(): React.JSX.Element {
       <SafeAreaProvider>
         <AppContent />
         <DialogHost />
+        <ThemeRevealHost />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
