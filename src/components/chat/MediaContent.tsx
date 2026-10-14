@@ -11,7 +11,7 @@ import type { ChatMessage } from '@/stores/chat.store';
 import { cancelDownload, downloadFileNow, requestFileById } from '@/services/tdlib/files';
 import { AppNative } from '@/services/native';
 import { showAlert } from '@/components/ui/Dialog';
-import { useT } from '@/i18n';
+import { t, useT } from '@/i18n';
 
 const MAX_W = 260;
 const MAX_H = 320;
@@ -249,10 +249,7 @@ export function VoiceContent({ message, tint, textColor, onLongPress }: MediaPro
 /** Lokal faylni tashqi ilovada ochadi. */
 export async function openLocalFile(path: string, mime: string): Promise<void> {
   const ok = await AppNative.openFile(path.replace(/^file:\/\//, ''), mime).catch(() => false);
-  if (!ok) {
-    const { t } = await import('@/i18n');
-    showAlert(t('chat.cantOpenFile'));
-  }
+  if (!ok) showAlert(t('chat.cantOpenFile'));
 }
 
 /** Fayl: nomi, hajmi; bosilganda yuklab olinadi, yuklangan bo'lsa ochiladi. */

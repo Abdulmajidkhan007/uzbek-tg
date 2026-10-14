@@ -1090,6 +1090,9 @@ function handleUpdate(u: TdObject): void {
     case 'updateChatAccentColors':
       updateChat(u.chat_id as number, { accent_color_id: u.accent_color_id as number });
       break;
+    case 'updateChatAvailableReactions':
+      updateChat(u.chat_id as number, { available_reactions: u.available_reactions } as Partial<TdChat>);
+      return;
     case 'updateChatPermissions':
       updateChat(u.chat_id as number, { permissions: u.permissions as Record<string, boolean> });
       break;
@@ -1840,6 +1843,51 @@ export async function getDiscussionChat(chatIdStr: string, messageId: string): P
     message_id: Number(messageId),
   });
   return chatById(String(info.chat_id));
+}
+
+const DEFAULT_REACTIONS = ['👍', '❤️', '🔥', '😂', '😮', '😢', '🙏'];
+
+/** Chatda qo'yish mumkin bo'lgan tezkor reaksiyalar (bo'sh — reaksiya o'chirilgan). */
+export function reactionsFor(chatIdStr: string): string[] {
+  const c = chats.get(Number(chatIdStr)) as (TdChat & { available_reactions?: AnyRec }) | undefined;
+  const ar = c?.available_reactions;
+  if (!ar || ar['@type'] !== 'chatAvailableReactionsSome') return DEFAULT_REACTIONS;
+  return ((ar.reactions ?? []) as AnyRec[])
+    .map((r) => (r['@type'] === 'reactionTypeEmoji' ? (r.emoji as string) : ''))
+    .filter(Boolean)
+    .slice(0, 7);
+}
+
+/** Forum mavzusi xabarlari (eskidan yangiga). */
+export async function loadTopicHistory(chatIdStr: string, topicId: string): Promise<ChatMessage[]> {
+  const res = await td<TdObject & { messages: (TdMessage | null)[] }>({
+    '@type': 'getForumTopicHistory',
+    chat_id: Number(chatIdStr),
+    forum_topic_id: Number(topicId),
+    from_message_id: 0,
+    offset: 0,
+    limit: 50,
+  });
+  return res.messages
+    .filter((m): m is TdMessage => m !== null)
+    .reverse()
+    .map(toChatMessage);
+}
+
+/** Forum mavzusiga matn yuborish. */
+export async function sendTopicText(chatIdStr: string, topicId: string, text: string): Promise<void> {
+  await td({
+    '@type': 'sendMessage',
+    chat_id: Number(chatIdStr),
+    topic_id: { '@type': 'messageTopicForum', forum_topic_id: Number(topicId) },
+    reply_to: null,
+    input_message_content: {
+      '@type': 'inputMessageText',
+      text: { '@type': 'formattedText', text, entities: [] },
+      link_preview_options: null,
+      clear_draft: true,
+    },
+  });
 }
 
 /** Chat obyekti (keshda bo'lmasa getChat). */

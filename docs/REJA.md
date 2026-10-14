@@ -95,23 +95,37 @@
     (kesh hajmi, tozalash), Chat papkalari (faqat ko'rish).
   - Profil tabi: Rasm qo'yish / Tahrirlash / Sozlamalar, telefon, bio, username.
 
+#### 2026-10-14: katta yangilanish (kod yozildi, telefonda hali sinalmagan)
+- 3 til (uz/en/ru): `src/i18n/` (`useT`, `t`, ko'plik shakllari), Til ekrani.
+- Native modul `AppNative` (Kotlin, kutubxonasiz): ekran surati (mavzu animatsiyasi),
+  ovoz yozish (OGG/Opus, Android 10+; eskida AAC→audio), fayl tanlash, bildirishnoma,
+  galereyaga saqlash, ulashish/ochish (FileProvider), tarmoq turi.
+- Mavzu: Telegram'ga yaqin ranglar, 7 ta asosiy rang, kunduzgi/tungi rejimga doira
+  animatsiyasi bilan o'tish (`ThemeReveal`, react-native-svg mask).
+
 #### Telegram bilan tenglik ro'yxati (ghost mode'dan oldin)
 | Funksiya | Holat |
 |---|---|
 | Kirish (kod, 2FA), chiqish | ✅ ishlaydi |
-| Chatlar ro'yxati, papkalar, arxiv, qadash/ovozsiz/arxivlash | ⏳ kod yozildi |
+| Chatlar ro'yxati, papkalar, arxiv, qadash/ovozsiz/arxivlash | ✅ egasi ko'rdi (2026-10-13) |
 | Matn yuborish, reaksiya, o'chirish, uzatish, pin | ✅ ishlaydi |
-| Rasm/video/ovoz/fayl ko'rish va ijro | ✅ ishlaydi (egasi tasdiqladi) |
-| "yozmoqda" ko'rsatkichi | ⏳ kod yozildi |
-| Qurilmalar (seanslar), kesh | ⏳ kod yozildi |
-| Javob (reply) preview, xabarni tahrirlash | ❌ yo'q |
-| Rasm/video/fayl yuborish, ovoz yozish | ❌ yo'q |
-| Animatsiyali stiker, GIF ijrosi ro'yxatda | ❌ statik |
-| Maxfiylik sozlamalari (haqiqiy `getUserPrivacySettingRules`) | ❌ ekran bor, TDLib'ga ulanmagan |
-| Bildirishnomalar sozlamalari, push | ❌ yo'q |
-| Papka yaratish/tahrirlash | ❌ yo'q |
-| Galereyaga saqlash/ulashish | ❌ yo'q |
-| Qo'ng'iroqlar | ❌ (WebRTC kerak, keyinroq) |
+| Rasm/video/ovoz/fayl ko'rish va ijro | ✅ ishlaydi |
+| Formatlangan matn, havolalar, inline tugmalar, ko'rishlar, xizmat xabarlari | ⏳ kod yozildi |
+| Javob (reply), tahrirlash, qoralama, "yozmoqda" yuborish | ⏳ kod yozildi |
+| Rasm/video/fayl yuborish, ovozli xabar yozish | ⏳ kod yozildi |
+| Galereyaga saqlash, ulashish, faylni ochish | ⏳ kod yozildi |
+| Maxfiylik (haqiqiy qoidalar), 2FA, avto-o'chirish, akkaunt TTL | ⏳ kod yozildi (istisno ro'yxatini tahrirlash yo'q) |
+| Bildirishnomalar sozlamalari (TDLib doiralari) | ⏳ kod yozildi |
+| Telefon bildirishnomalari | ⏳ faqat ilova jarayoni tirik paytda; yopiq ilovaga push uchun Firebase kerak |
+| Akkaunt (ism, bio, username, tug'ilgan kun) | ⏳ kod yozildi (raqam almashtirish yo'q) |
+| Qurilmalar, seanslarni tugatish, avto-tugatish | ⏳ kod yozildi (QR kirish yo'q) |
+| Xotira (diagramma, toifa bo'yicha tozalash, saqlash muddati, chegarasi) | ⏳ kod yozildi |
+| Trafik statistikasi, avto-yuklash, proxy | ⏳ kod yozildi |
+| Papka yaratish/tahrirlash/o'chirish | ⏳ kod yozildi |
+| Chat sozlamalari (shrift, burchak, fon, rang, kun/tun) | ⏳ kod yozildi |
+| 3 til | ⏳ kod yozildi |
+| Izohlar (post thread), albomlar bitta bubble'da, animatsiyali stiker | ❌ yo'q / qisman |
+| Qo'ng'iroqlar | ❌ (WebRTC kerak) |
 
 ### Release imzo kaliti
 - `.github/workflows/release-keystore.yml` (qo'lda, `confirm=HA`) — PKCS12 kalit

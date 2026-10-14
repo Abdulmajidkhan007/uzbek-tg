@@ -5,6 +5,7 @@
  */
 import { onTdUpdate, td } from './client';
 import type { TdFile, TdObject } from './types';
+import { t } from '@/i18n';
 
 const paths = new Map<number, string>();
 const requested = new Set<number>();
@@ -121,7 +122,7 @@ export async function downloadFileNow(fileId: number): Promise<string> {
     synchronous: true,
   });
   if (!file.local.is_downloading_completed || !file.local.path) {
-    throw new Error('Fayl yuklab olinmadi');
+    throw new Error(t('chat.downloadFailed'));
   }
   paths.set(file.id, file.local.path);
   listeners.forEach((fn) => fn());

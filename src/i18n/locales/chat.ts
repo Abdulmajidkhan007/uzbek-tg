@@ -42,7 +42,7 @@ const locale: Locale = {
     'chat.service.joinedByRequest': "{actor} so'rovi qabul qilindi",
     'chat.service.left': '{actor} guruhni tark etdi',
     'chat.service.removed': '{actor} {target}ni chiqarib yubordi',
-    'chat.service.channelTitle': '{title}: kanal nomi o\'zgartirildi',
+    'chat.service.channelTitle': 'Kanal nomi «{title}» ga o\'zgartirildi',
     'chat.service.groupTitle': '{actor} guruh nomini «{title}» ga o\'zgartirdi',
     'chat.service.channelPhoto': 'Kanal rasmi yangilandi',
     'chat.service.groupPhoto': '{actor} guruh rasmini yangiladi',
@@ -254,6 +254,7 @@ const locale: Locale = {
     'chat.info.userNotFound': 'Foydalanuvchi topilmadi',
     'chat.info.commonGroups': '{n} ta umumiy guruh',
     'chat.info.discussion': 'Muhokama guruhi',
+    'chat.info.commonGroupsLabel': 'Umumiy guruhlar',
     'chat.info.linkedChannel': 'Bog\'langan kanal',
     'chat.info.open': 'Ochish',
 
@@ -526,6 +527,7 @@ const locale: Locale = {
     'chat.info.commonGroups_one': '{n} group in common',
     'chat.info.commonGroups_other': '{n} groups in common',
     'chat.info.discussion': 'Discussion group',
+    'chat.info.commonGroupsLabel': 'Groups in common',
     'chat.info.linkedChannel': 'Linked channel',
     'chat.info.open': 'Open',
 
@@ -812,6 +814,7 @@ const locale: Locale = {
     'chat.info.commonGroups_few': '{n} общие группы',
     'chat.info.commonGroups_many': '{n} общих групп',
     'chat.info.discussion': 'Группа обсуждения',
+    'chat.info.commonGroupsLabel': 'Общие группы',
     'chat.info.linkedChannel': 'Связанный канал',
     'chat.info.open': 'Открыть',
 

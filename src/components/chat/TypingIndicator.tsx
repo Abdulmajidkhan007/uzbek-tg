@@ -9,6 +9,7 @@ import Animated, {
   withDelay,
 } from 'react-native-reanimated';
 import { useTheme } from '@/hooks/useTheme';
+import { useT } from '@/i18n';
 
 // ---------------------------------------------------------------------------
 // Prop interface
@@ -65,11 +66,13 @@ const TypingIndicator = React.memo(function TypingIndicator({
   userName,
 }: TypingIndicatorProps) {
   const theme = useTheme();
+  const tr = useT();
+  const label = tr('chat.action.typingNamed', { name: userName });
 
   return (
     <View
       style={styles.row}
-      accessibilityLabel={`${userName} is typing`}
+      accessibilityLabel={label}
       accessibilityLiveRegion="polite"
     >
       <View
@@ -100,7 +103,7 @@ const TypingIndicator = React.memo(function TypingIndicator({
         ]}
         numberOfLines={1}
       >
-        {userName} is typing...
+        {label}…
       </Text>
     </View>
   );

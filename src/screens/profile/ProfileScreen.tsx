@@ -1,357 +1,177 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Share,
-} from 'react-native';
+/**
+ * Boshqa foydalanuvchi profili: getUser + getUserFullInfo (bio, telefon,
+ * username, umumiy guruhlar), xabar yozish, ulashish, bloklash, umumiy media.
+ */
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import * as Haptics from '@/utils/haptics';
 import type { StackScreenProps } from '@react-navigation/stack';
 
 import { useTheme } from '@/hooks/useTheme';
+import { useT, t } from '@/i18n';
 import Avatar from '@/components/common/Avatar';
-import Divider from '@/components/ui/Divider';
+import LoadingState from '@/components/common/LoadingState';
 import { useChatStore } from '@/stores/chat.store';
-import { openPrivateChat, setUserBlocked } from '@/services/tdlib/chats';
-import { td } from '@/services/tdlib/client';
+import { loadUserProfile, openPrivateChat, setUserBlocked, type UserProfile } from '@/services/tdlib/chats';
 import type { ChatStackParamList } from '@/navigation/types';
 import { showActionSheet, showAlert } from '@/components/ui/Dialog';
+import { ActionButton, InfoRow, SharedMediaSection } from '@/components/chat/InfoBlocks';
+import { userStatusLabel } from '@/components/chat/chatFormat';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 type Props = StackScreenProps<ChatStackParamList, 'Profile'>;
 
-// ---------------------------------------------------------------------------
-// Action button
-// ---------------------------------------------------------------------------
-interface ActionButtonProps {
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  label: string;
-  onPress: () => void;
-  color?: string;
-}
-
-const ActionButton = React.memo(function ActionButton({
-  icon,
-  label,
-  onPress,
-  color,
-}: ActionButtonProps) {
-  const theme = useTheme();
-  const c = color ?? theme.colors.primary;
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.7}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      style={[
-        styles.actionBtn,
-        {
-          backgroundColor: theme.colors.surfaceElevated,
-          borderRadius: theme.radius.md,
-          paddingVertical: theme.spacing.md,
-          paddingHorizontal: theme.spacing.sm,
-        },
-      ]}
-    >
-      <Ionicons name={icon} size={22} color={c} />
-      <Text
-        style={[
-          theme.textStyles.caption,
-          { color: c, marginTop: 4, fontWeight: theme.fontWeights.medium, textAlign: 'center' },
-        ]}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Info row
-// ---------------------------------------------------------------------------
-const InfoRow = React.memo(function InfoRow({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  label: string;
-  value: string;
-}) {
-  const theme = useTheme();
-  return (
-    <View
-      style={[
-        styles.infoRow,
-        {
-          paddingHorizontal: theme.spacing.lg,
-          paddingVertical: theme.spacing.md,
-          backgroundColor: theme.colors.surfaceElevated,
-        },
-      ]}
-    >
-      <Ionicons name={icon} size={18} color={theme.colors.textSecondary} style={{ width: 24 }} />
-      <View style={styles.infoText}>
-        <Text style={[theme.textStyles.caption, { color: theme.colors.textSecondary }]}>
-          {label}
-        </Text>
-        <Text
-          style={[theme.textStyles.bodyMedium, { color: theme.colors.text, marginTop: 2 }]}
-          selectable
-        >
-          {value}
-        </Text>
-      </View>
-    </View>
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Main screen
-// ---------------------------------------------------------------------------
 export function ProfileScreen({ route, navigation }: Props): React.JSX.Element {
   const theme = useTheme();
+  const tr = useT();
   const { userId } = route.params;
 
-  const chats = useChatStore((s) => s.chats);
-  const user = useMemo(
-    () => chats.find((c) => c.otherUser?.id === userId)?.otherUser ?? null,
-    [chats, userId],
-  );
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
   const [isBlocked, setIsBlocked] = useState(false);
+  // Shaxsiy chat (bo'lsa) — umumiy media soni uchun.
+  const privateChatId = useChatStore((s) => s.chats.find((c) => c.type === 'private' && c.otherUser?.id === userId)?.id);
+
   useEffect(() => {
-    td<{ '@type': string; block_list?: unknown }>({ '@type': 'getUserFullInfo', user_id: Number(userId) })
-      .then((info) => setIsBlocked(info.block_list != null))
-      .catch(() => undefined);
+    loadUserProfile(userId)
+      .then((p) => {
+        setProfile(p);
+        setIsBlocked(p?.isBlocked ?? false);
+      })
+      .catch(() => setProfile(null))
+      .finally(() => setLoading(false));
   }, [userId]);
 
-  const fullName = useMemo(
-    () => (user ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ''}` : 'Unknown User'),
-    [user],
-  );
-
-  const statusLabel = useMemo(() => {
-    if (!user) return '';
-    if (user.status === 'online') return 'Online';
-    if (user.status === 'recently') return 'Last seen recently';
-    return 'Offline';
-  }, [user]);
-
-  const handleBack = useCallback(() => navigation.goBack(), [navigation]);
+  const user = profile?.user;
+  const fullName = user ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ''}` : '';
 
   const handleMessage = useCallback(() => {
-    if (!user) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    openPrivateChat(user.id)
-      .then((chat) =>
-        navigation.navigate('ChatDetail', {
-          chatId: chat.id,
-          chatType: chat.type,
-          title: chat.name,
-          avatarUrl: chat.avatarUrl,
-        }),
-      )
-      .catch(() => undefined);
-  }, [user, navigation]);
+    openPrivateChat(userId)
+      .then((chat) => navigation.navigate('ChatDetail', { chatId: chat.id, chatType: chat.type, title: chat.name, avatarUrl: chat.avatarUrl }))
+      .catch((e: unknown) => showAlert(t('chat.actionFailed'), e instanceof Error ? e.message : String(e)));
+  }, [userId, navigation]);
 
-  const handleShare = useCallback(async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try {
-      await Share.share({
-        message: user?.username ? `https://t.me/${user.username}` : fullName,
-        title: fullName,
-      });
-    } catch {
-      // Share dismissed
-    }
-  }, [fullName, user]);
+  const handleShare = useCallback(() => {
+    if (!user?.username) return;
+    Share.share({ message: `https://t.me/${user.username}`, title: fullName }).catch(() => undefined);
+  }, [user, fullName]);
 
   const handleBlock = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (isBlocked) {
-      showAlert('Blokdan chiqarish', `${fullName} sizga yana yoza oladi.`, [
-        { text: 'Bekor qilish', style: 'cancel' },
+    const next = !isBlocked;
+    showAlert(
+      next ? t('chat.info.block') : t('chat.info.unblock'),
+      next ? t('chat.info.blockConfirm', { name: fullName }) : t('chat.info.unblockConfirm', { name: fullName }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Blokdan chiqarish',
-          onPress: () => {
-            setIsBlocked(false);
-            void setUserBlocked(userId, false);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          },
+          text: next ? t('chat.info.block') : t('chat.info.unblock'),
+          style: next ? 'destructive' : 'default',
+          onPress: () =>
+            setUserBlocked(userId, next)
+              .then(() => setIsBlocked(next))
+              .catch((e: unknown) => showAlert(t('chat.actionFailed'), e instanceof Error ? e.message : String(e))),
         },
-      ]);
-    } else {
-      showAlert('Bloklash', `${fullName} bloklansinmi? U sizga yoza olmaydi.`, [
-        { text: 'Bekor qilish', style: 'cancel' },
-        {
-          text: 'Bloklash',
-          style: 'destructive',
-          onPress: () => {
-            setIsBlocked(true);
-            void setUserBlocked(userId, true);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          },
-        },
-      ]);
-    }
+      ],
+    );
   }, [isBlocked, fullName, userId]);
 
   const handleMore = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    showActionSheet({
-      title: fullName,
-      options: [
-        { text: 'Ulashish', icon: 'share-social-outline', onPress: handleShare },
-        isBlocked
-          ? { text: 'Blokdan chiqarish', icon: 'lock-open-outline', onPress: handleBlock }
-          : { text: 'Bloklash', icon: 'hand-left-outline', destructive: true, onPress: handleBlock },
-      ],
-    });
-  }, [fullName, isBlocked, handleShare, handleBlock]);
+    const options = [];
+    if (user?.username) options.push({ text: t('common.share'), icon: 'share-social-outline', onPress: handleShare });
+    options.push(
+      isBlocked
+        ? { text: t('chat.info.unblock'), icon: 'lock-open-outline', onPress: handleBlock }
+        : { text: t('chat.info.block'), icon: 'hand-left-outline', destructive: true, onPress: handleBlock },
+    );
+    showActionSheet({ title: fullName, options });
+  }, [user, isBlocked, fullName, handleShare, handleBlock]);
 
-  if (!user) {
+  const headerBar = (
+    <View style={[styles.header, { borderBottomColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
+      <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel={tr('chat.goBack')}>
+        <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+      </TouchableOpacity>
+      <Text style={[theme.textStyles.headingSmall, { color: theme.colors.text, flex: 1 }]} numberOfLines={1}>
+        {tr('chat.info.profileTitle')}
+      </Text>
+      {user ? (
+        <TouchableOpacity onPress={handleMore} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel={tr('chat.moreOptions')}>
+          <Ionicons name="ellipsis-vertical" size={22} color={theme.colors.text} />
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+
+  if (loading || !user || !profile) {
     return (
       <SafeAreaView style={[styles.root, { backgroundColor: theme.colors.background }]} edges={['top']}>
-        <View style={styles.centered}>
-          <Text style={[theme.textStyles.bodyMedium, { color: theme.colors.textSecondary }]}>
-            Foydalanuvchi topilmadi.
-          </Text>
-        </View>
+        {headerBar}
+        {loading ? (
+          <LoadingState message={tr('common.loading')} />
+        ) : (
+          <View style={styles.centered}>
+            <Text style={[theme.textStyles.bodyMedium, { color: theme.colors.textSecondary }]}>{tr('chat.info.userNotFound')}</Text>
+          </View>
+        )}
       </SafeAreaView>
     );
   }
 
+  const online = user.status === 'online';
+  const phone = profile.phone ? `+${profile.phone.replace(/^\+/, '')}` : '';
+
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: theme.colors.background }]} edges={['top']}>
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          { paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm, borderBottomColor: theme.colors.borderSubtle },
-        ]}
-      >
-        <TouchableOpacity onPress={handleBack} activeOpacity={0.7} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel="Go back">
-          <Ionicons name="chevron-back" size={24} color={theme.colors.primary} />
-        </TouchableOpacity>
-        <Text style={[theme.textStyles.headingSmall, { color: theme.colors.text, flex: 1, textAlign: 'center' }]} numberOfLines={1}>
-          Profile
-        </Text>
-        <TouchableOpacity onPress={handleMore} activeOpacity={0.7} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel="More options">
-          <Ionicons name="ellipsis-horizontal" size={22} color={theme.colors.primary} />
-        </TouchableOpacity>
-      </View>
-
+      {headerBar}
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
-        {/* Hero */}
-        <View style={[styles.hero, { paddingVertical: theme.spacing.xxl, backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.borderSubtle }]}>
-          <Avatar uri={user.avatarUrl} name={fullName} size={88} showOnline isOnline={user.status === 'online'} />
-          <View style={styles.heroNameRow}>
-            <Text style={[theme.textStyles.headingMedium, { color: theme.colors.text, marginTop: theme.spacing.md }]}>
-              {fullName}
-            </Text>
-            {user.isVerified && (
-              <Ionicons name="checkmark-circle" size={20} color={theme.colors.primary} style={{ marginLeft: 6, marginTop: theme.spacing.md }} />
-            )}
-          </View>
-          {user.username ? (
-            <Text style={[theme.textStyles.bodySmall, { color: theme.colors.primary, marginTop: theme.spacing.xs }]}>
-              {user.username}
-            </Text>
-          ) : null}
-          <Text style={[theme.textStyles.bodySmall, { color: user.status === 'online' ? theme.colors.secondary : theme.colors.textSecondary, marginTop: theme.spacing.xs }]}>
-            {statusLabel}
+        <View style={[styles.hero, { backgroundColor: theme.colors.surface }]}>
+          <Avatar uri={user.avatarUrl} name={fullName} size={88} showOnline isOnline={online} />
+          <Text style={[theme.textStyles.headingMedium, { color: theme.colors.text, marginTop: 12, textAlign: 'center' }]}>{fullName}</Text>
+          <Text style={[theme.textStyles.bodySmall, { color: online ? theme.colors.primary : theme.colors.textSecondary, marginTop: 4 }]}>
+            {userStatusLabel(tr, user)}
           </Text>
-          {/* Actions */}
-          <View style={[styles.actionsRow, { marginTop: theme.spacing.xl, paddingHorizontal: theme.spacing.xl, gap: theme.spacing.md }]}>
-            <ActionButton icon="chatbubble-outline" label="Xabar" onPress={handleMessage} />
-            <ActionButton icon="share-outline" label="Ulashish" onPress={handleShare} />
+          <View style={styles.actionsRow}>
+            <ActionButton icon="chatbubble-outline" label={tr('chat.info.sendMessage')} onPress={handleMessage} />
+            {user.username ? <ActionButton icon="share-social-outline" label={tr('common.share')} onPress={handleShare} /> : null}
+            <ActionButton
+              icon={isBlocked ? 'lock-open-outline' : 'hand-left-outline'}
+              label={isBlocked ? tr('chat.info.unblock') : tr('chat.info.block')}
+              onPress={handleBlock}
+              color={isBlocked ? undefined : theme.colors.error}
+            />
           </View>
         </View>
 
-        {/* Info */}
-        <Text style={[theme.textStyles.bodySmall, { color: theme.colors.textSecondary, fontWeight: theme.fontWeights.semibold, textTransform: 'uppercase', letterSpacing: theme.letterSpacing.wide, paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.xxl, paddingBottom: theme.spacing.sm }]}>
-          Info
-        </Text>
-        <View style={{ paddingHorizontal: theme.spacing.lg }}>
-          <View style={{ borderRadius: theme.radius.md, overflow: 'hidden' }}>
-            {user.username ? (
-              <>
-                <InfoRow icon="at-outline" label="Username" value={user.username} />
-                <Divider inset={theme.spacing.lg + 24 + theme.spacing.md} />
-              </>
-            ) : null}
-            <InfoRow icon="radio-button-on-outline" label="Status" value={statusLabel} />
-            <Divider inset={theme.spacing.lg + 24 + theme.spacing.md} />
-            <InfoRow icon="shield-checkmark-outline" label="Account" value={user.isVerified ? 'Verified Account' : 'Standard Account'} />
-          </View>
+        <View style={{ marginTop: 8 }}>
+          {phone ? (
+            <InfoRow
+              icon="call-outline"
+              label={tr('chat.info.phone')}
+              value={phone}
+              onPress={() => Linking.openURL(`tel:${phone}`).catch(() => undefined)}
+            />
+          ) : null}
+          {profile.bio ? <InfoRow icon="information-circle-outline" label={tr('chat.info.bio')} value={profile.bio} /> : null}
+          {user.username ? <InfoRow icon="at-outline" label={tr('chat.info.username')} value={`@${user.username}`} /> : null}
+          {profile.commonGroups > 0 ? (
+            <InfoRow icon="people-outline" label={tr('chat.info.commonGroupsLabel')} value={tr.p('chat.info.commonGroups', profile.commonGroups)} />
+          ) : null}
         </View>
 
-        {/* Shared media */}
-        <Text style={[theme.textStyles.bodySmall, { color: theme.colors.textSecondary, fontWeight: theme.fontWeights.semibold, textTransform: 'uppercase', letterSpacing: theme.letterSpacing.wide, paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.xxl, paddingBottom: theme.spacing.sm }]}>
-          Shared Media
-        </Text>
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() => {}}
-          style={[styles.mediaRow, { backgroundColor: theme.colors.surfaceElevated, marginHorizontal: theme.spacing.lg, borderRadius: theme.radius.md, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md }]}
-          accessibilityRole="button"
-          accessibilityLabel="View shared media"
-        >
-          <Ionicons name="images-outline" size={18} color={theme.colors.textSecondary} />
-          <Text style={[theme.textStyles.bodyMedium, { color: theme.colors.text, flex: 1, marginLeft: theme.spacing.md }]}>Photos & Videos</Text>
-          <Text style={[theme.textStyles.bodySmall, { color: theme.colors.textSecondary }]}>12</Text>
-          <Ionicons name="chevron-forward" size={16} color={theme.colors.textTertiary} style={{ marginLeft: theme.spacing.xs }} />
-        </TouchableOpacity>
-
-        {/* Block */}
-        <View style={{ paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.xxl }}>
-          <TouchableOpacity
-            onPress={handleBlock}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={isBlocked ? 'Unblock user' : 'Block user'}
-            style={[
-              styles.blockBtn,
-              {
-                backgroundColor: isBlocked ? theme.colors.secondary + '18' : theme.colors.error + '18',
-                borderColor: isBlocked ? theme.colors.secondary + '40' : theme.colors.error + '40',
-                borderRadius: theme.radius.md,
-                paddingVertical: theme.spacing.md,
-              },
-            ]}
-          >
-            <Ionicons name={isBlocked ? 'checkmark-circle-outline' : 'ban-outline'} size={18} color={isBlocked ? theme.colors.secondary : theme.colors.error} />
-            <Text style={[theme.textStyles.buttonMedium, { color: isBlocked ? theme.colors.secondary : theme.colors.error, marginLeft: theme.spacing.sm }]}>
-              {isBlocked ? 'Unblock User' : 'Block User'}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        {privateChatId ? <SharedMediaSection chatId={privateChatId} /> : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
   root: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth },
+  header: { flexDirection: 'row', alignItems: 'center', height: 56, paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth, gap: 8 },
   headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  hero: { alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth },
-  heroNameRow: { flexDirection: 'row', alignItems: 'center' },
-  actionsRow: { flexDirection: 'row', justifyContent: 'center' },
-  actionBtn: { flex: 1, alignItems: 'center', maxWidth: 80 },
-  infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, minHeight: 52 },
-  infoText: { flex: 1 },
-  mediaRow: { flexDirection: 'row', alignItems: 'center' },
-  blockBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  hero: { alignItems: 'center', paddingTop: 24, paddingBottom: 16, paddingHorizontal: 16 },
+  actionsRow: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: 18, alignSelf: 'stretch' },
 });
