@@ -1,13 +1,17 @@
 /**
  * Xabar ichidagi media: rasm, video/GIF/video-xabar, stiker, ovozli xabar,
- * audio va fayl. Fayllar TDLib orqali kerak bo'lganda yuklab olinadi.
+ * audio va fayl. Fayllar TDLib orqali kerak bo'lganda (yoki avto-yuklash
+ * qoidasiga ko'ra) yuklab olinadi.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import Video from 'react-native-video';
 import type { ChatMessage } from '@/stores/chat.store';
-import { downloadFileNow } from '@/services/tdlib/files';
+import { cancelDownload, downloadFileNow, requestFileById } from '@/services/tdlib/files';
+import { AppNative } from '@/services/native';
+import { showAlert } from '@/components/ui/Dialog';
+import { useT } from '@/i18n';
 
 const MAX_W = 260;
 const MAX_H = 320;
@@ -39,48 +43,88 @@ function fitSize(w: number | undefined, h: number | undefined, max = MAX_W): { w
 interface MediaProps {
   message: ChatMessage;
   onPress?: (message: ChatMessage) => void;
+  onLongPress?: () => void;
   tint: string;
   textColor: string;
 }
 
-/** Rasm: avval xira minithumbnail, yuklab bo'lingach to'liq rasm. */
-export function PhotoContent({ message, onPress }: MediaProps): React.JSX.Element {
+/** Yuklash/yuborish jarayoni: doira ichida foiz. */
+function ProgressBadge({ value, onCancel }: { value: number; onCancel?: () => void }): React.JSX.Element {
+  return (
+    <Pressable onPress={onCancel} disabled={!onCancel} style={styles.progressCircle}>
+      <ActivityIndicator color="#FFFFFF" size="small" style={StyleSheet.absoluteFill} />
+      <Text style={styles.progressText}>{Math.round(value * 100)}%</Text>
+    </Pressable>
+  );
+}
+
+/** Rasm: xira oldindan ko'rinish; avto-yuklanmagan bo'lsa yuklab olish tugmasi. */
+export function PhotoContent({ message, onPress, onLongPress }: MediaProps): React.JSX.Element {
   const size = fitSize(message.mediaWidth, message.mediaHeight);
   const uri = message.mediaUrl ?? message.thumbUrl;
+  const loading = !message.mediaUrl && !message.needsDownload;
   return (
-    <Pressable onPress={() => onPress?.(message)} accessibilityRole="imagebutton">
+    <Pressable
+      onPress={() => {
+        if (message.needsDownload && message.mediaFileId) requestFileById(message.mediaFileId);
+        else onPress?.(message);
+      }}
+      onLongPress={onLongPress}
+      delayLongPress={350}
+      accessibilityRole="imagebutton"
+    >
       <View style={[styles.mediaBox, size]}>
         {uri ? (
-          <Image
-            source={{ uri }}
-            style={StyleSheet.absoluteFill}
-            resizeMode="cover"
-            blurRadius={message.mediaUrl ? 0 : 8}
-          />
+          <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" blurRadius={message.mediaUrl ? 0 : 8} />
         ) : null}
-        {!message.mediaUrl ? <ActivityIndicator color="#FFFFFF" /> : null}
+        {message.uploadProgress != null ? (
+          <ProgressBadge value={message.uploadProgress} />
+        ) : message.needsDownload ? (
+          <View style={styles.playCircle}>
+            <Ionicons name="arrow-down" size={26} color="#FFFFFF" />
+          </View>
+        ) : loading ? (
+          message.downloadProgress != null ? (
+            <ProgressBadge
+              value={message.downloadProgress}
+              onCancel={message.mediaFileId ? () => cancelDownload(message.mediaFileId!) : undefined}
+            />
+          ) : (
+            <ActivityIndicator color="#FFFFFF" />
+          )
+        ) : null}
+        {message.needsDownload && message.fileSize ? (
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{formatSize(message.fileSize)}</Text>
+          </View>
+        ) : null}
       </View>
     </Pressable>
   );
 }
 
 /** Video, GIF va dumaloq video-xabar: oldindan ko'rinish + ijro tugmasi. */
-export function VideoContent({ message, onPress }: MediaProps): React.JSX.Element {
+export function VideoContent({ message, onPress, onLongPress }: MediaProps): React.JSX.Element {
   const isNote = message.mediaKind === 'videoNote';
   const size = isNote ? { width: 200, height: 200 } : fitSize(message.mediaWidth, message.mediaHeight);
+  const progress = message.uploadProgress ?? message.downloadProgress;
   return (
-    <Pressable onPress={() => onPress?.(message)} accessibilityRole="button">
+    <Pressable onPress={() => onPress?.(message)} onLongPress={onLongPress} delayLongPress={350} accessibilityRole="button">
       <View style={[styles.mediaBox, size, isNote && { borderRadius: 100 }]}>
         {message.thumbUrl ? (
           <Image source={{ uri: message.thumbUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
         ) : null}
-        <View style={styles.playCircle}>
-          <Ionicons name="play" size={26} color="#FFFFFF" style={{ marginLeft: 3 }} />
-        </View>
+        {progress != null ? (
+          <ProgressBadge value={progress} />
+        ) : (
+          <View style={styles.playCircle}>
+            <Ionicons name="play" size={26} color="#FFFFFF" style={{ marginLeft: 3 }} />
+          </View>
+        )}
         <View style={styles.badge}>
           <Text style={styles.badgeText}>
             {message.mediaKind === 'gif' ? 'GIF' : formatDuration(message.duration)}
-            {message.mediaKind === 'video' && message.fileSize ? `  ${formatSize(message.fileSize)}` : ''}
+            {message.mediaKind === 'video' && message.fileSize && !message.mediaLocalPath ? `  ${formatSize(message.fileSize)}` : ''}
           </Text>
         </View>
       </View>
@@ -88,14 +132,18 @@ export function VideoContent({ message, onPress }: MediaProps): React.JSX.Elemen
   );
 }
 
-export function StickerContent({ message }: MediaProps): React.JSX.Element {
+export function StickerContent({ message, onLongPress }: MediaProps): React.JSX.Element {
   const size = fitSize(message.mediaWidth, message.mediaHeight, 170);
-  return message.mediaUrl ? (
-    <Image source={{ uri: message.mediaUrl }} style={{ width: size.width, height: size.width }} resizeMode="contain" />
-  ) : (
-    <View style={{ width: 170, height: 170, alignItems: 'center', justifyContent: 'center' }}>
-      <ActivityIndicator />
-    </View>
+  return (
+    <Pressable onLongPress={onLongPress} delayLongPress={350}>
+      {message.mediaUrl ? (
+        <Image source={{ uri: message.mediaUrl }} style={{ width: size.width, height: size.width }} resizeMode="contain" />
+      ) : (
+        <View style={{ width: 170, height: 170, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator />
+        </View>
+      )}
+    </Pressable>
   );
 }
 
@@ -103,16 +151,19 @@ export function StickerContent({ message }: MediaProps): React.JSX.Element {
 let stopActive: (() => void) | null = null;
 
 /** Ovozli xabar va audio: bosilganda yuklab olib ijro etadi. */
-export function VoiceContent({ message, tint, textColor }: MediaProps): React.JSX.Element {
-  const [uri, setUri] = useState<string | null>(null);
+export function VoiceContent({ message, tint, textColor, onLongPress }: MediaProps): React.JSX.Element {
+  const [uri, setUri] = useState<string | null>(message.mediaLocalPath ? `file://${message.mediaLocalPath}` : null);
   const [loading, setLoading] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const stopRef = useRef<() => void>(() => setPlaying(false));
 
-  useEffect(() => () => {
-    if (stopActive === stopRef.current) stopActive = null;
-  }, []);
+  useEffect(
+    () => () => {
+      if (stopActive === stopRef.current) stopActive = null;
+    },
+    [],
+  );
 
   const toggle = useCallback(async () => {
     if (playing) {
@@ -121,10 +172,11 @@ export function VoiceContent({ message, tint, textColor }: MediaProps): React.JS
     }
     if (stopActive && stopActive !== stopRef.current) stopActive();
     stopActive = stopRef.current;
-    if (!uri) {
+    let local = uri;
+    if (!local) {
       if (!message.mediaFileId) return;
       setLoading(true);
-      const local = await downloadFileNow(message.mediaFileId).catch(() => null);
+      local = await downloadFileNow(message.mediaFileId).catch(() => null);
       setLoading(false);
       if (!local) return;
       setUri(local);
@@ -140,8 +192,13 @@ export function VoiceContent({ message, tint, textColor }: MediaProps): React.JS
 
   return (
     <View style={styles.voiceRow}>
-      <Pressable onPress={toggle} style={[styles.voiceButton, { backgroundColor: tint }]} accessibilityRole="button">
-        {loading ? (
+      <Pressable
+        onPress={toggle}
+        onLongPress={onLongPress}
+        style={[styles.voiceButton, { backgroundColor: tint }]}
+        accessibilityRole="button"
+      >
+        {loading || message.uploadProgress != null ? (
           <ActivityIndicator color="#FFFFFF" />
         ) : (
           <Ionicons name={playing ? 'pause' : 'play'} size={20} color="#FFFFFF" style={!playing && { marginLeft: 2 }} />
@@ -161,7 +218,7 @@ export function VoiceContent({ message, tint, textColor }: MediaProps): React.JS
                   styles.waveBar,
                   {
                     height: 4 + v * 18,
-                    backgroundColor: i / shown.length <= progress ? tint : `${textColor}55`,
+                    backgroundColor: i / shown.length <= progress && progress > 0 ? tint : `${textColor}55`,
                   },
                 ]}
               />
@@ -189,23 +246,44 @@ export function VoiceContent({ message, tint, textColor }: MediaProps): React.JS
   );
 }
 
-/** Fayl: nomi, hajmi; bosilganda yuklab olinadi. */
-export function DocumentContent({ message, tint, textColor }: MediaProps): React.JSX.Element {
-  const [state, setState] = useState<'idle' | 'loading' | 'done'>('idle');
-  const download = useCallback(async () => {
-    if (!message.mediaFileId || state !== 'idle') return;
-    setState('loading');
-    const local = await downloadFileNow(message.mediaFileId).catch(() => null);
-    setState(local ? 'done' : 'idle');
-  }, [message.mediaFileId, state]);
+/** Lokal faylni tashqi ilovada ochadi. */
+export async function openLocalFile(path: string, mime: string): Promise<void> {
+  const ok = await AppNative.openFile(path.replace(/^file:\/\//, ''), mime).catch(() => false);
+  if (!ok) {
+    const { t } = await import('@/i18n');
+    showAlert(t('chat.cantOpenFile'));
+  }
+}
+
+/** Fayl: nomi, hajmi; bosilganda yuklab olinadi, yuklangan bo'lsa ochiladi. */
+export function DocumentContent({ message, tint, textColor, onLongPress }: MediaProps): React.JSX.Element {
+  const tr = useT();
+  const [loading, setLoading] = useState(false);
+  const localPath = message.mediaLocalPath;
+  const progress = message.uploadProgress ?? message.downloadProgress;
+
+  const press = useCallback(async () => {
+    if (localPath) {
+      await openLocalFile(localPath, message.mimeType ?? '*/*');
+      return;
+    }
+    if (!message.mediaFileId) return;
+    if (message.downloadProgress != null) {
+      cancelDownload(message.mediaFileId);
+      return;
+    }
+    setLoading(true);
+    requestFileById(message.mediaFileId);
+    setLoading(false);
+  }, [localPath, message.mediaFileId, message.mimeType, message.downloadProgress]);
 
   return (
-    <Pressable onPress={download} style={styles.voiceRow} accessibilityRole="button">
+    <Pressable onPress={press} onLongPress={onLongPress} delayLongPress={350} style={styles.voiceRow} accessibilityRole="button">
       <View style={[styles.voiceButton, { backgroundColor: tint }]}>
-        {state === 'loading' ? (
+        {progress != null || loading ? (
           <ActivityIndicator color="#FFFFFF" />
         ) : (
-          <Ionicons name={state === 'done' ? 'document-text' : 'arrow-down'} size={20} color="#FFFFFF" />
+          <Ionicons name={localPath ? 'document-text' : 'arrow-down'} size={20} color="#FFFFFF" />
         )}
       </View>
       <View style={{ flex: 1 }}>
@@ -213,7 +291,11 @@ export function DocumentContent({ message, tint, textColor }: MediaProps): React
           {message.fileName}
         </Text>
         <Text style={[styles.voiceTime, { color: `${textColor}AA` }]}>
-          {state === 'done' ? 'Yuklab olindi' : formatSize(message.fileSize)}
+          {progress != null
+            ? `${formatSize(Math.round((message.fileSize ?? 0) * progress))} / ${formatSize(message.fileSize)}`
+            : localPath
+            ? `${formatSize(message.fileSize)} · ${tr('chat.openFile')}`
+            : formatSize(message.fileSize)}
         </Text>
       </View>
     </Pressable>
@@ -236,6 +318,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  progressCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
   badge: {
     position: 'absolute',
     left: 8,
