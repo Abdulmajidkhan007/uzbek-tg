@@ -62,6 +62,18 @@ export function requestFile(file: TdFile | undefined, priority = 1): void {
   });
 }
 
+/** Fayl id bo'yicha yuklab olishni boshlaydi (fon rejimida, jarayon updateFile orqali). */
+export function requestFileById(fileId: number, priority = 16): void {
+  if (paths.has(fileId)) return;
+  ensureListener();
+  requested.add(fileId);
+  listeners.forEach((fn) => fn());
+  td({ '@type': 'downloadFile', file_id: fileId, priority, offset: 0, limit: 0, synchronous: false }).catch(() => {
+    requested.delete(fileId);
+    listeners.forEach((fn) => fn());
+  });
+}
+
 /** Faylni yuklab olish so'ralganmi (avto yoki foydalanuvchi bosgani). */
 export function isFileRequested(fileId: number): boolean {
   return requested.has(fileId);

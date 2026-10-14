@@ -2,10 +2,11 @@
  * Sozlamalar (Telegram uslubi): markazda avatar, ism, telefon • @username,
  * pastda rangli ikonkali bo'limlar.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useFocusEffect } from '@react-navigation/native';
 import type { StackScreenProps } from '@react-navigation/stack';
 
 import { useTheme } from '@/hooks/useTheme';
@@ -45,14 +46,12 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
   const [sessionsCount, setSessionsCount] = useState<number | null>(null);
 
   // Qurilmalar soni — har safar ekranga qaytganda yangilanadi.
-  useEffect(
-    () =>
-      navigation.addListener('focus', () => {
-        getSessions()
-          .then((r) => setSessionsCount(r.sessions.length))
-          .catch(() => undefined);
-      }),
-    [navigation],
+  useFocusEffect(
+    useCallback(() => {
+      getSessions()
+        .then((r) => setSessionsCount(r.sessions.length))
+        .catch(() => undefined);
+    }, []),
   );
 
   const name = user ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ''}` : '';

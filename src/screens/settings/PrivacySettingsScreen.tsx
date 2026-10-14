@@ -4,9 +4,10 @@
  * getDefaultMessageAutoDeleteTime, getActiveSessions, getBlockedMessageSenders,
  * getAccountTtl.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import type { StackScreenProps } from '@react-navigation/stack';
 
 import { useTheme } from '@/hooks/useTheme';
@@ -93,7 +94,7 @@ export function PrivacySettingsScreen({ navigation }: Props): React.JSX.Element 
   }, []);
 
   // Ichki ekrandan qaytganda qiymatlar yangilanadi.
-  useEffect(() => navigation.addListener('focus', load), [navigation, load]);
+  useFocusEffect(load);
 
   const autoDeleteLabel = (s: number) => (s === 0 ? t('common.off') : formatSeconds(s, t.p));
 
