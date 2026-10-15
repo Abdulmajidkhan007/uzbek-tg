@@ -182,6 +182,10 @@ export interface Chat {
   isOnline?: boolean;
   isTyping?: boolean;
   typingUserName?: string;
+  /** Qoralama matni (draft_message, faqat matnli qoralama). */
+  draftText?: string;
+  /** Qoralama sanasi (draft_message.date). */
+  draftDate?: Date;
   updatedAt: Date;
 }
 

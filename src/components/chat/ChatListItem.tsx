@@ -52,13 +52,20 @@ const ChatListItem = React.memo(function ChatListItem({
   const isOwn = msg != null && msg.senderId === currentUserId;
   const isGroup = chat.type === 'group' || chat.type === 'topic_group';
 
+  // Qoralama (Telegram kabi): o'qilmagan yangiroq xabar bo'lmasa, oxirgi xabar o'rniga ko'rsatiladi.
+  const draftNewer = chat.draftDate != null && chat.draftDate.getTime() >= chat.updatedAt.getTime();
+  const showDraft = !!chat.draftText && !chat.isTyping && (chat.unreadCount === 0 || draftNewer);
+  const shownTime = showDraft && draftNewer && chat.draftDate ? chat.draftDate : chat.updatedAt;
+
   let prefix = '';
-  if (msg && !chat.isTyping) {
+  if (msg && !chat.isTyping && !showDraft) {
     if (isOwn && chat.type !== 'channel' && !isSaved) prefix = t('main.you');
     else if (isGroup && msg.senderPreview.firstName) prefix = msg.senderPreview.firstName;
   }
   const preview = chat.isTyping
     ? `${chat.typingUserName ?? ''}...`
+    : showDraft
+    ? (chat.draftText ?? '').replace(/\s+/g, ' ')
     : msg
     ? msg.previewText ?? msg.text ?? ''
     : '';
@@ -67,7 +74,7 @@ const ChatListItem = React.memo(function ChatListItem({
   const avatarUri = chat.avatarUrl ?? chat.otherUser?.avatarUrl;
 
   let tick: string | null = null;
-  if (isOwn && msg && chat.type !== 'channel') {
+  if (isOwn && msg && chat.type !== 'channel' && !showDraft) {
     if (msg.status === 'sending') tick = 'time-outline';
     else if (msg.status === 'failed') tick = 'alert-circle';
     else if (msg.status === 'read') tick = 'checkmark-done';
@@ -126,7 +133,7 @@ const ChatListItem = React.memo(function ChatListItem({
             />
           ) : null}
           <Text style={[styles.time, { color: unread && !chat.isMuted ? c.primary : c.textSecondary }]}>
-            {formatChatTime(chat.updatedAt, t.lang)}
+            {formatChatTime(shownTime, t.lang)}
           </Text>
         </View>
 
@@ -135,6 +142,7 @@ const ChatListItem = React.memo(function ChatListItem({
             style={[styles.preview, { color: c.textSecondary }, lines === 3 && styles.previewTall]}
             numberOfLines={lines === 3 ? 2 : 1}
           >
+            {showDraft ? <Text style={{ color: c.error }}>{t('chat.draft')}: </Text> : null}
             {prefix ? <Text style={{ color: c.text }}>{prefix}: </Text> : null}
             <Text style={chat.isTyping ? { color: c.primary } : undefined}>{preview}</Text>
           </Text>

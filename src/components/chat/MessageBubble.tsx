@@ -3,7 +3,7 @@
  * formatlangan matn, media, so'rovnoma/kontakt/joylashuv, havola kartochkasi,
  * imzo + ko'rishlar + vaqt, reaksiyalar, inline tugmalar, kanal izohlari.
  */
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { View, Text, Pressable, StyleSheet, type ViewStyle } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { format } from 'date-fns';
@@ -28,7 +28,16 @@ export interface MessageBubbleProps {
   isChannel?: boolean;
   /** Qidiruv / javobga o'tishda qisqa yoritish. */
   highlighted?: boolean;
+  /** Bosish — xabar menyusi (reaksiyalar + amallar). */
+  onPress?: (message: ChatMessage) => void;
+  /** Uzoq bosish — tanlash rejimi (barmoqni surib ko'proq tanlash). */
   onLongPress?: (message: ChatMessage) => void;
+  /** Tanlash rejimi: chapda doiracha, bosish — tanlash/bekor qilish. */
+  selectionMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (message: ChatMessage) => void;
+  /** Surib tanlash uchun qator ko'rinishini ro'yxatga olish (o'lchash uchun). */
+  registerRow?: (messageId: string, view: View | null) => void;
   onReplyPress?: (reply: MessageReply) => void;
   onReactionPress?: (messageId: string, emoji: string) => void;
   /** Rasm/video bosilganda (to'liq ekranda ochish). */
@@ -148,7 +157,12 @@ const MessageBubble = React.memo(function MessageBubble({
   showSender,
   isChannel = false,
   highlighted = false,
+  onPress,
   onLongPress,
+  selectionMode = false,
+  selected = false,
+  onToggleSelect,
+  registerRow,
   onReplyPress,
   onReactionPress,
   onMediaPress,
@@ -164,6 +178,22 @@ const MessageBubble = React.memo(function MessageBubble({
   const tail = Math.min(radius, 5);
 
   const handleLongPress = useCallback(() => onLongPress?.(message), [onLongPress, message]);
+  const handlePress = useCallback(() => onPress?.(message), [onPress, message]);
+  const handleToggle = useCallback(() => onToggleSelect?.(message), [onToggleSelect, message]);
+  const nodeRef = useRef<View | null>(null);
+  const messageId = message.id;
+  const rowRef = useCallback(
+    (v: View | null) => {
+      if (v) {
+        nodeRef.current = v;
+        registerRow?.(messageId, v);
+      } else {
+        registerRow?.(messageId, null);
+        nodeRef.current = null;
+      }
+    },
+    [registerRow, messageId],
+  );
 
   const bare =
     message.mediaKind === 'sticker' ||
@@ -197,7 +227,7 @@ const MessageBubble = React.memo(function MessageBubble({
   const special = { text: textColor, accent: linkColor, fontSize };
 
   function renderBody() {
-    const mediaProps = { message, onPress: onMediaPress, onLongPress: handleLongPress, tint: theme.colors.primary, textColor };
+    const mediaProps = { message, onPress: onMediaPress, onLongPress: handleLongPress, onTap: handlePress, tint: theme.colors.primary, textColor };
     let media: React.ReactNode = null;
     if (message.mediaKind === 'sticker') media = <StickerContent {...mediaProps} />;
     else if (message.type === 'image') media = <PhotoContent {...mediaProps} />;
@@ -252,10 +282,12 @@ const MessageBubble = React.memo(function MessageBubble({
     </View>
   );
 
-  return (
-    <View style={[styles.row, isOwn ? styles.rowOwn : styles.rowOther, highlighted && styles.highlight]}>
-      <View style={[styles.bubbleGroup, isOwn ? styles.bubbleGroupOwn : styles.bubbleGroupOther]}>
-        <Pressable onLongPress={handleLongPress} delayLongPress={350} accessibilityHint={tr('chat.moreOptions')}>
+  const content = (
+      <View
+        style={[styles.bubbleGroup, isOwn ? styles.bubbleGroupOwn : styles.bubbleGroupOther]}
+        pointerEvents={selectionMode ? 'none' : 'auto'}
+      >
+        <Pressable onPress={handlePress} onLongPress={handleLongPress} delayLongPress={300} accessibilityHint={tr('chat.moreOptions')}>
           <View style={[styles.bubble, bubbleRadius, { backgroundColor: bubbleBg }, bare && styles.bubbleBare]}>
             {message.forwardFrom ? (
               <Text style={[styles.forward, { color: linkColor }]} numberOfLines={2}>
@@ -312,9 +344,45 @@ const MessageBubble = React.memo(function MessageBubble({
           <InlineKeyboard rows={message.replyMarkup} onPress={(b) => onButtonPress(message, b)} isDark={theme.isDark} />
         ) : null}
       </View>
-    </View>
+  );
+
+  const rowStyle = [
+    styles.row,
+    isOwn ? styles.rowOwn : styles.rowOther,
+    highlighted && styles.highlight,
+    selectionMode && !isOwn && styles.rowSelecting,
+    selected && { backgroundColor: `${theme.colors.primary}26` },
+  ];
+
+  // Tanlash rejimida butun qator bosiladi, ichki tugmalar o'chiriladi (Telegram kabi).
+  // Ildiz element doim bir xil (Pressable) — rejim almashganda ichki holat yo'qolmaydi.
+  return (
+    <Pressable
+      ref={rowRef}
+      collapsable={false}
+      style={rowStyle}
+      disabled={!selectionMode}
+      onPress={handleToggle}
+      onLongPress={handleLongPress}
+      delayLongPress={300}
+      accessible={selectionMode}
+      accessibilityRole={selectionMode ? 'checkbox' : undefined}
+      accessibilityState={selectionMode ? { checked: selected } : undefined}
+    >
+      {selectionMode ? <SelectCircle selected={selected} /> : null}
+      {content}
+    </Pressable>
   );
 });
+
+/** Telegram uslubidagi tanlash doirachasi (tanlanganda yashil, belgi bilan). */
+export function SelectCircle({ selected, style }: { selected: boolean; style?: ViewStyle }) {
+  return (
+    <View style={[styles.selectCircle, selected ? styles.selectCircleOn : styles.selectCircleOff, style]}>
+      {selected ? <Ionicons name="checkmark" size={15} color="#FFFFFF" /> : null}
+    </View>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -324,6 +392,19 @@ const styles = StyleSheet.create({
   rowOwn: { justifyContent: 'flex-end' },
   rowOther: { justifyContent: 'flex-start' },
   highlight: { backgroundColor: 'rgba(80,160,230,0.22)' },
+  rowSelecting: { paddingLeft: 44 },
+  selectCircle: {
+    position: 'absolute',
+    left: 10,
+    bottom: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectCircleOn: { backgroundColor: '#4FAE4E', borderWidth: 2, borderColor: '#FFFFFF' },
+  selectCircleOff: { borderWidth: 2, borderColor: 'rgba(255,255,255,0.9)', backgroundColor: 'rgba(0,0,0,0.18)' },
   bubbleGroup: { maxWidth: '82%' },
   bubbleGroupOwn: { alignItems: 'flex-end' },
   bubbleGroupOther: { alignItems: 'flex-start' },

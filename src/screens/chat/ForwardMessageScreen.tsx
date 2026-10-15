@@ -155,6 +155,15 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
   const theme = useTheme();
   const tr = useT();
   const { messageId, sourceChatId } = route.params;
+  // Bir nechta xabar — vergul bilan ajratilgan id'lar (tanlash rejimidan).
+  // TDLib: message_ids qat'iy o'sish tartibida bo'lishi kerak.
+  const messageIds = useMemo(
+    () =>
+      [...new Set(messageId.split(',').map((x) => Number(x.trim())).filter((x) => Number.isFinite(x) && x > 0))].sort(
+        (a, b) => a - b,
+      ),
+    [messageId],
+  );
 
   const searchInputRef = useRef<TextInput>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -184,7 +193,7 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
   }, [navigation]);
 
   const handleForward = useCallback(async () => {
-    if (selectedIds.size === 0) return;
+    if (selectedIds.size === 0 || messageIds.length === 0) return;
     try {
       for (const id of selectedIds) {
         await td({
@@ -192,7 +201,7 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
           chat_id: Number(id),
           topic_id: null,
           from_chat_id: Number(sourceChatId),
-          message_ids: [Number(messageId)],
+          message_ids: messageIds,
           options: null,
           send_copy: false,
           remove_caption: false,
@@ -203,7 +212,7 @@ export function ForwardMessageScreen({ route, navigation }: Props): React.JSX.El
     } catch (e) {
       showAlert(tr('chat.forward.failed'), e instanceof Error ? e.message : String(e));
     }
-  }, [selectedIds, navigation, sourceChatId, messageId, tr]);
+  }, [selectedIds, navigation, sourceChatId, messageIds, tr]);
 
   const renderItem = useCallback(
     ({ item }: { item: Chat }) => (

@@ -2,11 +2,15 @@
  * Chatlar ro'yxati (Telegram uslubi): sarlavhada ulanish holati, papka
  * tablari (TDLib chat folders), arxiv qatori, uzoq bosilganda amallar menyusi.
  * Arxiv ham shu komponent orqali ko'rsatiladi (ArchivedChatsScreen).
+ * Asosiy ro'yxat tepasida hikoyalar qatori; pastga aylantirilganda u yig'iladi
+ * va sarlavhada kichik hikoya avatarlari ko'rinadi.
  */
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   type GestureResponderEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,6 +21,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import Animated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import * as Haptics from '@/utils/haptics';
 import type { StackNavigationProp, StackScreenProps } from '@react-navigation/stack';
 import { useNavigation } from '@react-navigation/native';
@@ -40,6 +45,12 @@ import { t, useT } from '@/i18n';
 
 import ChatListItem from '@/components/chat/ChatListItem';
 import EmptyState from '@/components/common/EmptyState';
+import {
+  STORIES_ROW_HEIGHT,
+  StoriesHeaderAvatars,
+  StoriesRow,
+  useStoryPostAlerts,
+} from '@/components/stories/StoriesRow';
 
 type Nav = StackNavigationProp<ChatStackParamList>;
 
@@ -129,9 +140,10 @@ interface ChatListBodyProps {
   data: Chat[];
   header?: React.ReactElement | null;
   emptyText: string;
+  onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
 }
 
-function ChatListBody({ listKey, data, header, emptyText }: ChatListBodyProps): React.JSX.Element {
+function ChatListBody({ listKey, data, header, emptyText, onScroll }: ChatListBodyProps): React.JSX.Element {
   const theme = useTheme();
   const tr = useT();
   const navigation = useNavigation<Nav>();
@@ -182,6 +194,8 @@ function ChatListBody({ listKey, data, header, emptyText }: ChatListBodyProps): 
       }
       onEndReached={() => void loadMoreChats(listKey)}
       onEndReachedThreshold={0.6}
+      onScroll={onScroll}
+      scrollEventThrottle={32}
       contentContainerStyle={{ paddingBottom: 120 }}
       extraData={tr.lang}
     />
@@ -246,6 +260,39 @@ export function ChatListScreen({ navigation }: Props): React.JSX.Element {
   const listChats = useChatStore((s) => s.listChats);
   const connection = useAuthStore((s) => s.connection);
   const [active, setActive] = useState('main');
+  useStoryPostAlerts();
+
+  // Hikoyalar qatori: faqat asosiy ro'yxatda; aylantirilganda yig'iladi.
+  const showStories = active === 'main';
+  const collapse = useSharedValue(0);
+  const collapsedRef = useRef(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const setStoriesCollapsed = useCallback(
+    (v: boolean) => {
+      if (collapsedRef.current === v) return;
+      collapsedRef.current = v;
+      setCollapsed(v);
+      collapse.value = withTiming(v ? 1 : 0, { duration: 200 });
+    },
+    [collapse],
+  );
+  useEffect(() => setStoriesCollapsed(false), [active, setStoriesCollapsed]);
+  const onListScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+      const y = contentOffset.y;
+      if (y <= 4) setStoriesCollapsed(false);
+      // Ro'yxat qisqa bo'lsa yig'ilmaydi (aks holda ochilib-yopilib turadi).
+      else if (y > 40 && contentSize.height - layoutMeasurement.height > STORIES_ROW_HEIGHT + 40) {
+        setStoriesCollapsed(true);
+      }
+    },
+    [setStoriesCollapsed],
+  );
+  const storiesRowStyle = useAnimatedStyle(() => ({
+    height: (1 - collapse.value) * STORIES_ROW_HEIGHT,
+    opacity: 1 - collapse.value,
+  }));
 
   const archive = listChats.archive ?? EMPTY;
   const data = active === 'main' ? chats : listChats[active] ?? EMPTY;
@@ -271,6 +318,11 @@ export function ChatListScreen({ navigation }: Props): React.JSX.Element {
           {connection !== 'ready' ? (
             <ActivityIndicator size="small" color={c.textSecondary} style={{ marginRight: 10 }} />
           ) : null}
+          {showStories && collapsed ? (
+            <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
+              <StoriesHeaderAvatars onPress={(chatId) => navigation.navigate('StoryViewer', { chatId })} />
+            </Animated.View>
+          ) : null}
           <Text style={[styles.title, { color: c.text }]} accessibilityRole="header" numberOfLines={1}>
             {connection === 'ready' ? 'Uzbek TG' : tr(CONNECTION_KEY[connection])}
           </Text>
@@ -292,6 +344,12 @@ export function ChatListScreen({ navigation }: Props): React.JSX.Element {
           <Ionicons name="search" size={23} color={c.text} />
         </TouchableOpacity>
       </View>
+
+      {showStories ? (
+        <Animated.View style={[styles.storiesWrap, { backgroundColor: c.surface }, storiesRowStyle]}>
+          <StoriesRow />
+        </Animated.View>
+      ) : null}
 
       {folders.length > 0 ? (
         <View style={[styles.tabsWrap, { backgroundColor: c.surface, borderBottomColor: c.border }]}>
@@ -322,6 +380,7 @@ export function ChatListScreen({ navigation }: Props): React.JSX.Element {
         data={data}
         header={archiveHeader}
         emptyText={active === 'main' ? tr('main.empty.main') : tr('main.empty.folder')}
+        onScroll={showStories ? onListScroll : undefined}
       />
 
       <TouchableOpacity
@@ -377,6 +436,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 21, fontWeight: '700', flexShrink: 1 },
   headerIcon: { padding: 6, marginLeft: 8 },
   back: { paddingRight: 18, paddingVertical: 6 },
+  storiesWrap: { overflow: 'hidden' },
   tabsWrap: { borderBottomWidth: StyleSheet.hairlineWidth },
   tabs: { paddingHorizontal: 6 },
   tab: { paddingHorizontal: 12, paddingTop: 8 },

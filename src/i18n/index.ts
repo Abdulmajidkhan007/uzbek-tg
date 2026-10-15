@@ -16,6 +16,7 @@ import chat from './locales/chat';
 import settings from './locales/settings';
 import data from './locales/data';
 import appearance from './locales/appearance';
+import stories from './locales/stories';
 
 import type { Lang } from '@/stores/ui.store';
 export type { Lang };
@@ -28,7 +29,7 @@ export const LANGUAGES: { code: Lang; name: string; native: string }[] = [
   { code: 'ru', name: 'Russian', native: 'Русский' },
 ];
 
-const parts: Locale[] = [common, main, chat, settings, data, appearance];
+const parts: Locale[] = [common, main, chat, settings, data, appearance, stories];
 const dicts: Record<Lang, Dict> = { uz: {}, en: {}, ru: {} };
 for (const p of parts) {
   for (const l of ['uz', 'en', 'ru'] as Lang[]) Object.assign(dicts[l], p[l]);
