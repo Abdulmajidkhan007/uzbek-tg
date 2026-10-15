@@ -17,6 +17,7 @@ export const PRIVACY_TD_TYPE: Record<PrivacySettingKey, string> = {
   showPhoneNumber: 'userPrivacySettingShowPhoneNumber',
   showBio: 'userPrivacySettingShowBio',
   showBirthdate: 'userPrivacySettingShowBirthdate',
+  showProfileAudio: 'userPrivacySettingShowProfileAudio',
   allowFindingByPhoneNumber: 'userPrivacySettingAllowFindingByPhoneNumber',
   allowChatInvites: 'userPrivacySettingAllowChatInvites',
   allowCalls: 'userPrivacySettingAllowCalls',
@@ -410,4 +411,26 @@ export function formatDays(days: number, p: Plural): string {
 export function formatSeconds(seconds: number, p: Plural): string {
   if (seconds % 86400 === 0) return formatDays(seconds / 86400, p);
   return p('settings.time.hours', Math.max(1, Math.round(seconds / 3600)));
+}
+
+// ---------------------------------------------------------------------------
+// "Xabarlar" (Premium): notanish foydalanuvchilar yangi chat ocha oladimi
+// ---------------------------------------------------------------------------
+
+export async function getNewChatsFromUnknown(): Promise<boolean> {
+  const r = await td<TdObject & { allow_new_chats_from_unknown_users: boolean }>({
+    '@type': 'getNewChatPrivacySettings',
+  });
+  return r.allow_new_chats_from_unknown_users;
+}
+
+export async function setNewChatsFromUnknown(allow: boolean): Promise<void> {
+  await td({
+    '@type': 'setNewChatPrivacySettings',
+    settings: {
+      '@type': 'newChatPrivacySettings',
+      allow_new_chats_from_unknown_users: allow,
+      incoming_paid_message_star_count: 0,
+    },
+  });
 }

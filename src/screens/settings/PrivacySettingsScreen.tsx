@@ -16,6 +16,7 @@ import { SettingsCard, SettingsRow } from '@/components/ui/SettingsRow';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { showActionSheet, showAlert } from '@/components/ui/Dialog';
 import type { PrivacySettingKey, SettingsStackParamList } from '@/navigation/types';
+import { useAuthStore } from '@/stores/auth.store';
 import {
   errorText,
   formatDays,
@@ -24,8 +25,10 @@ import {
   getBlockedCount,
   getDefaultAutoDelete,
   getPasswordState,
+  getNewChatsFromUnknown,
   getPrivacyRules,
   getSessions,
+  setNewChatsFromUnknown,
   setAccountTtl,
   setDefaultAutoDelete,
   summarizeRules,
@@ -34,15 +37,20 @@ import {
 
 type Props = StackScreenProps<SettingsStackParamList, 'PrivacySettings'>;
 
-const PRIVACY_ROWS: { key: PrivacySettingKey; label: string; icon: string; color: string }[] = [
+const PRIVACY_ROWS: { key: PrivacySettingKey; label: string; icon: string; color: string; premium?: boolean }[] = [
   { key: 'showPhoneNumber', label: 'settings.privacy.phone', icon: 'call', color: '#5DBB5A' },
   { key: 'showStatus', label: 'settings.privacy.lastSeen', icon: 'time', color: '#3E9BEA' },
   { key: 'showProfilePhoto', label: 'settings.privacy.photos', icon: 'person-circle', color: '#E5574F' },
-  { key: 'showBio', label: 'settings.privacy.bio', icon: 'information-circle', color: '#F59B2B' },
-  { key: 'showBirthdate', label: 'settings.privacy.birthdate', icon: 'gift', color: '#E05C9C' },
   { key: 'showLinkInForwardedMessages', label: 'settings.privacy.forwards', icon: 'arrow-redo', color: '#3E9BEA' },
   { key: 'allowCalls', label: 'settings.privacy.calls', icon: 'call-outline', color: '#5DBB5A' },
-  { key: 'allowPrivateVoiceAndVideoNoteMessages', label: 'settings.privacy.voice', icon: 'mic', color: '#9C6ADE' },
+  { key: 'allowPrivateVoiceAndVideoNoteMessages', label: 'settings.privacy.voice', icon: 'mic', color: '#9C6ADE', premium: true },
+];
+
+/** "Xabarlar" qatoridan keyingi qatorlar (Telegram tartibi). */
+const PRIVACY_ROWS_2: { key: PrivacySettingKey; label: string; icon: string; color: string }[] = [
+  { key: 'showBirthdate', label: 'settings.privacy.birthdate', icon: 'gift', color: '#E05C9C' },
+  { key: 'showBio', label: 'settings.privacy.bio', icon: 'information-circle', color: '#F59B2B' },
+  { key: 'showProfileAudio', label: 'settings.privacy.savedMusic', icon: 'musical-notes', color: '#E5574F' },
   { key: 'allowChatInvites', label: 'settings.privacy.invites', icon: 'people', color: '#F59B2B' },
 ];
 
@@ -69,13 +77,51 @@ export function PrivacySettingsScreen({ navigation }: Props): React.JSX.Element 
   const [sessionsCount, setSessionsCount] = useState<number | null>(null);
   const [blockedCount, setBlockedCount] = useState<number | null>(null);
   const [ttlDays, setTtlDays] = useState<number | null>(null);
+  const [newChatsAll, setNewChatsAll] = useState<boolean | null>(null);
+  const isPremium = useAuthStore((st) => st.currentUser?.isPremium ?? false);
+
+  const premiumAlert = () => showAlert(t('settings.privacy.premiumTitle'), t('settings.privacy.premiumRequired'));
+
+  const pickNewChats = () =>
+    showActionSheet({
+      title: t('settings.privacy.messagesTitle'),
+      options: [
+        {
+          text: t('common.everybody') + (newChatsAll ? '  ✓' : ''),
+          onPress: () => {
+            setNewChatsAll(true);
+            setNewChatsFromUnknown(true).catch((e) => {
+              setNewChatsAll(newChatsAll);
+              showAlert(t('common.error'), errorText(e));
+            });
+          },
+        },
+        {
+          text: t('settings.privacy.contactsAndPremium') + (newChatsAll === false ? '  ✓' : '') + (isPremium ? '' : '  🔒'),
+          onPress: () => {
+            if (!isPremium) {
+              premiumAlert();
+              return;
+            }
+            setNewChatsAll(false);
+            setNewChatsFromUnknown(false).catch((e) => {
+              setNewChatsAll(newChatsAll);
+              showAlert(t('common.error'), errorText(e));
+            });
+          },
+        },
+      ],
+    });
 
   const load = useCallback(() => {
-    for (const row of PRIVACY_ROWS) {
+    for (const row of [...PRIVACY_ROWS, ...PRIVACY_ROWS_2]) {
       getPrivacyRules(row.key)
         .then((rules) => setPrivacy((p) => ({ ...p, [row.key]: summarizeRules(rules) })))
         .catch(() => undefined);
     }
+    getNewChatsFromUnknown()
+      .then(setNewChatsAll)
+      .catch(() => undefined);
     getPasswordState()
       .then((s) => setHasPassword(s.has_password))
       .catch(() => undefined);
@@ -167,7 +213,28 @@ export function PrivacySettingsScreen({ navigation }: Props): React.JSX.Element 
         </SettingsCard>
 
         <SettingsCard title={t('settings.privacy.section')}>
-          {PRIVACY_ROWS.map((row, i) => (
+          {PRIVACY_ROWS.map((row) => (
+            <SettingsRow
+              key={row.key}
+              icon={row.icon}
+              color={row.color}
+              label={t(row.label)}
+              premium={row.premium}
+              value={privacyValue(privacy[row.key], t)}
+              onPress={() => navigation.navigate('PrivacyRule', { setting: row.key })}
+            />
+          ))}
+          <SettingsRow
+            icon="chatbubble-ellipses"
+            color="#3E9BEA"
+            label={t('settings.privacy.messages')}
+            premium
+            value={
+              newChatsAll === null ? undefined : newChatsAll ? t('common.everybody') : t('settings.privacy.contactsAndPremium')
+            }
+            onPress={newChatsAll === null ? undefined : pickNewChats}
+          />
+          {PRIVACY_ROWS_2.map((row, i) => (
             <SettingsRow
               key={row.key}
               icon={row.icon}
@@ -175,7 +242,7 @@ export function PrivacySettingsScreen({ navigation }: Props): React.JSX.Element 
               label={t(row.label)}
               value={privacyValue(privacy[row.key], t)}
               onPress={() => navigation.navigate('PrivacyRule', { setting: row.key })}
-              last={i === PRIVACY_ROWS.length - 1}
+              last={i === PRIVACY_ROWS_2.length - 1}
             />
           ))}
         </SettingsCard>

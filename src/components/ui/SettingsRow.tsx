@@ -18,6 +18,8 @@ export interface SettingsRowProps {
   danger?: boolean;
   right?: React.ReactNode;
   last?: boolean;
+  /** Telegram Premium belgisi (yulduzcha) nom yonida. */
+  premium?: boolean;
 }
 
 export function SettingsRow({
@@ -30,6 +32,7 @@ export function SettingsRow({
   danger,
   right,
   last,
+  premium,
 }: SettingsRowProps): React.JSX.Element {
   const c = useTheme().colors;
   return (
@@ -45,9 +48,12 @@ export function SettingsRow({
       </View>
       <View style={[styles.body, !last && { borderBottomColor: c.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.label, { color: danger ? c.error : c.text }]} numberOfLines={1}>
-            {label}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={[styles.label, { color: danger ? c.error : c.text, flexShrink: 1 }]} numberOfLines={1}>
+              {label}
+            </Text>
+            {premium ? <Ionicons name="star" size={16} color="#A76BF5" style={{ marginLeft: 6 }} /> : null}
+          </View>
           {subtitle ? (
             <Text style={[styles.subtitle, { color: c.textSecondary }]} numberOfLines={2}>
               {subtitle}
