@@ -501,6 +501,8 @@ export default function AttachSheet({
         />
       );
   } else if (tab === 'location') {
+    const ready = loc.state === 'ready' ? loc : null;
+    const errMsg = loc.state === 'error' ? loc.message : '';
     body = (
       <View style={styles.centerBox}>
         {loc.state === 'loading' || loc.state === 'idle' ? (
@@ -512,13 +514,13 @@ export default function AttachSheet({
           <>
             <Ionicons name="location-outline" size={52} color={c.textTertiary} />
             <Text style={[styles.cardText, { color: c.textSecondary }]}>
-              {loc.state === 'denied' ? tr('chat.attach.locationPermission') : `${tr('chat.attach.locationFailed')}\n${loc.message}`}
+              {loc.state === 'denied' ? tr('chat.attach.locationPermission') : `${tr('chat.attach.locationFailed')}\n${errMsg}`}
             </Text>
             <Pressable onPress={() => void fetchLocation()} style={[styles.primaryBtn, { backgroundColor: c.primary }]} accessibilityRole="button">
               <Text style={styles.primaryBtnText}>{tr('common.retry')}</Text>
             </Pressable>
           </>
-        ) : (
+        ) : ready ? (
           <View style={[styles.locCard, { backgroundColor: c.surfaceHighlight }]}>
             <View style={styles.locRow}>
               <View style={[styles.locIcon, { backgroundColor: c.primary }]}>
@@ -527,11 +529,11 @@ export default function AttachSheet({
               <View style={{ flex: 1 }}>
                 <Text style={[styles.locTitle, { color: c.text }]}>{tr('chat.attach.currentLocation')}</Text>
                 <Text style={[styles.locCoords, { color: c.textSecondary }]} selectable>
-                  {loc.latitude.toFixed(6)}, {loc.longitude.toFixed(6)}
+                  {ready.latitude.toFixed(6)}, {ready.longitude.toFixed(6)}
                 </Text>
-                {loc.accuracy > 0 ? (
+                {ready.accuracy > 0 ? (
                   <Text style={[styles.locCoords, { color: c.textSecondary }]}>
-                    {tr('chat.attach.accuracy', { n: Math.round(loc.accuracy) })}
+                    {tr('chat.attach.accuracy', { n: Math.round(ready.accuracy) })}
                   </Text>
                 ) : null}
               </View>
@@ -541,7 +543,7 @@ export default function AttachSheet({
             </View>
             <Pressable
               onPress={() =>
-                void runSend(() => onSendLocation({ latitude: loc.latitude, longitude: loc.longitude, accuracy: loc.accuracy }))
+                void runSend(() => onSendLocation({ latitude: ready.latitude, longitude: ready.longitude, accuracy: ready.accuracy }))
               }
               style={[styles.primaryBtn, styles.fullBtn, { backgroundColor: c.primary }]}
               accessibilityRole="button"
@@ -549,7 +551,7 @@ export default function AttachSheet({
               <Text style={styles.primaryBtnText}>{tr('chat.attach.sendLocation')}</Text>
             </Pressable>
           </View>
-        )}
+        ) : null}
       </View>
     );
   } else {
@@ -672,44 +674,42 @@ export default function AttachSheet({
       <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(160)} style={[StyleSheet.absoluteFill, styles.backdrop]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={close} accessibilityLabel={tr('common.close')} />
       </Animated.View>
-      <Animated.View
-        entering={SlideInDown.duration(240)}
-        exiting={SlideOutDown.duration(200)}
-        style={[styles.sheet, { backgroundColor: c.surface }, sheetStyle]}
-      >
-        <View {...pan.panHandlers}>
-          <View style={styles.handleWrap}>
-            <View style={[styles.handle, { backgroundColor: c.textTertiary }]} />
-          </View>
-          <View style={styles.headerRow}>
-            <Pressable onPress={close} hitSlop={8} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel={tr('common.close')}>
-              <Ionicons name="close" size={24} color={c.text} />
-            </Pressable>
-            <Text style={[styles.headerTitle, { color: c.text }]} numberOfLines={1}>
-              {title}
-            </Text>
-            {tab === 'gallery' && perm === 'granted' ? (
-              <Pressable
-                onPress={openSystemGallery}
-                hitSlop={8}
-                style={styles.headerBtn}
-                accessibilityRole="button"
-                accessibilityLabel={tr('chat.attach.chooseFromGallery')}
-              >
-                <Ionicons name="albums-outline" size={22} color={c.text} />
+      <Animated.View entering={SlideInDown.duration(240)} exiting={SlideOutDown.duration(200)} style={styles.sheetSlot}>
+        <Animated.View style={[styles.sheet, { backgroundColor: c.surface }, sheetStyle]}>
+          <View {...pan.panHandlers}>
+            <View style={styles.handleWrap}>
+              <View style={[styles.handle, { backgroundColor: c.textTertiary }]} />
+            </View>
+            <View style={styles.headerRow}>
+              <Pressable onPress={close} hitSlop={8} style={styles.headerBtn} accessibilityRole="button" accessibilityLabel={tr('common.close')}>
+                <Ionicons name="close" size={24} color={c.text} />
               </Pressable>
-            ) : (
-              <View style={styles.headerBtn} />
-            )}
+              <Text style={[styles.headerTitle, { color: c.text }]} numberOfLines={1}>
+                {title}
+              </Text>
+              {tab === 'gallery' && perm === 'granted' ? (
+                <Pressable
+                  onPress={openSystemGallery}
+                  hitSlop={8}
+                  style={styles.headerBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel={tr('chat.attach.chooseFromGallery')}
+                >
+                  <Ionicons name="albums-outline" size={22} color={c.text} />
+                </Pressable>
+              ) : (
+                <View style={styles.headerBtn} />
+              )}
+            </View>
           </View>
-        </View>
-        <View style={{ flex: 1 }}>{body}</View>
-        {hint ? (
-          <View style={styles.hint} pointerEvents="none">
-            <Text style={styles.hintText}>{hint}</Text>
-          </View>
-        ) : null}
-        {footer}
+          <View style={{ flex: 1 }}>{body}</View>
+          {hint ? (
+            <View style={styles.hint} pointerEvents="none">
+              <Text style={styles.hintText}>{hint}</Text>
+            </View>
+          ) : null}
+          {footer}
+        </Animated.View>
       </Animated.View>
     </View>
   );
@@ -717,11 +717,8 @@ export default function AttachSheet({
 
 const styles = StyleSheet.create({
   backdrop: { backgroundColor: 'rgba(0,0,0,0.45)' },
+  sheetSlot: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     borderTopLeftRadius: 14,
     borderTopRightRadius: 14,
     overflow: 'hidden',
