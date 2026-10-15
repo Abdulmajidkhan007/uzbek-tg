@@ -28,9 +28,8 @@ import { useT } from '@/i18n';
 import { useUIStore } from '@/stores/ui.store';
 import type { ChatMessage } from '@/stores/chat.store';
 import { AppNative, type Recording } from '@/services/native';
-import { sendTyping, type OutgoingMedia } from '@/services/tdlib/chats';
+import { sendTyping } from '@/services/tdlib/chats';
 import { showAlert } from '@/components/ui/Dialog';
-import { openAttachSheet } from './AttachSheet';
 import { nameColor } from './chatFormat';
 
 // ---------------------------------------------------------------------------
@@ -46,8 +45,11 @@ export interface MessageInputProps {
   initialText?: string;
   onSendText: (text: string) => void;
   onSendVoice?: (rec: Recording) => void;
-  /** Biriktirilgan fayllar; izoh — kiritilgan matn. */
-  onSendMedia?: (items: OutgoingMedia[], caption: string) => void;
+  /**
+   * Biriktirish tugmasi: joriy matn (izoh sifatida taklif qilinadi) va
+   * matnni tozalash funksiyasi (izoh bilan yuborilgandan keyin).
+   */
+  onAttach?: (currentText: string, clearText: () => void) => void;
   onCancelReply: () => void;
   onCancelEdit?: () => void;
   onTextChange?: (text: string) => void;
@@ -170,7 +172,7 @@ export default function MessageInput({
   initialText,
   onSendText,
   onSendVoice,
-  onSendMedia,
+  onAttach,
   onCancelReply,
   onCancelEdit,
   onTextChange,
@@ -229,14 +231,14 @@ export default function MessageInput({
   }, [onSendText, onTextChange]);
 
   const handleAttach = useCallback(() => {
-    if (!onSendMedia) return;
+    if (!onAttach) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    openAttachSheet((items) => {
-      onSendMedia(items, textRef.current.trim());
+    inputRef.current?.blur();
+    onAttach(textRef.current, () => {
       setText('');
       onTextChange?.('');
     });
-  }, [onSendMedia, onTextChange]);
+  }, [onAttach, onTextChange]);
 
   // ----------------------------------------------------------------- ovoz
   const recState = useRef<'idle' | 'starting' | 'recording'>('idle');
@@ -387,7 +389,7 @@ export default function MessageInput({
       ) : null}
 
       <View style={styles.inputRow}>
-        {!recording && onSendMedia && !editing ? (
+        {!recording && onAttach && !editing ? (
           <Pressable onPress={handleAttach} style={styles.iconButton} accessibilityLabel={tr('chat.attach')} accessibilityRole="button">
             <Ionicons name="attach" size={26} color={theme.colors.textSecondary} style={{ transform: [{ rotate: '45deg' }] }} />
           </Pressable>

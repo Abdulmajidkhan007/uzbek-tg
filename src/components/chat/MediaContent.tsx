@@ -44,6 +44,8 @@ interface MediaProps {
   message: ChatMessage;
   onPress?: (message: ChatMessage) => void;
   onLongPress?: () => void;
+  /** Stiker kabi "ochiladigan" bo'lmagan media bosilganda (xabar menyusi). */
+  onTap?: () => void;
   tint: string;
   textColor: string;
 }
@@ -132,10 +134,10 @@ export function VideoContent({ message, onPress, onLongPress }: MediaProps): Rea
   );
 }
 
-export function StickerContent({ message, onLongPress }: MediaProps): React.JSX.Element {
+export function StickerContent({ message, onLongPress, onTap }: MediaProps): React.JSX.Element {
   const size = fitSize(message.mediaWidth, message.mediaHeight, 170);
   return (
-    <Pressable onLongPress={onLongPress} delayLongPress={350}>
+    <Pressable onPress={onTap} onLongPress={onLongPress} delayLongPress={350}>
       {message.mediaUrl ? (
         <Image source={{ uri: message.mediaUrl }} style={{ width: size.width, height: size.width }} resizeMode="contain" />
       ) : (

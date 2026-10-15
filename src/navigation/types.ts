@@ -45,6 +45,8 @@ export type ChatStackParamList = {
   ChannelInfo: { chatId: string };
   ForwardMessage: { messageId: string; sourceChatId: string };
   TopicDetail: { chatId: string; topicId: string; topicTitle: string };
+  /** Hikoya ko'ruvchi: chatning faol hikoyalari (storyId berilmasa — birinchi o'qilmagani). */
+  StoryViewer: { chatId: string; storyId?: number };
 };
 
 export type SettingsStackParamList = {

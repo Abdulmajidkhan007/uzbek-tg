@@ -2,6 +2,10 @@
  * Chat ekrani: TDLib tarixidan xabarlar (FlashList inverted), sana ajratkichlari,
  * xizmat xabarlari, qadalgan xabar paneli, chat ichida qidiruv, xabar amallari,
  * javob/tahrirlash, media/ovoz yuborish, kanal uchun Ovozsiz/Qo'shilish paneli.
+ *
+ * Telegram Android kabi: xabarni bosish — menyu; uzoq bosish — tanlash rejimi
+ * (barmoqni qo'ymay surib bir nechta xabarni belgilash). Klaviatura (edge-to-edge,
+ * adjustResize ishlamaydi) — useAnimatedKeyboard bilan yozish paneli ko'tariladi.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -14,12 +18,24 @@ import {
   TextInput,
   ActivityIndicator,
   Linking,
+  Platform,
+  BackHandler,
+  Keyboard,
+  type GestureResponderEvent,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring, FadeIn, FadeOut } from 'react-native-reanimated';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedKeyboard,
+  withTiming,
+  withSpring,
+  FadeIn,
+  FadeOut,
+} from 'react-native-reanimated';
 import { isSameDay } from 'date-fns';
 import type { StackScreenProps } from '@react-navigation/stack';
 import * as Haptics from '@/utils/haptics';
@@ -33,6 +49,7 @@ import {
   closeChat,
   deleteChat,
   deleteMessage as tdDeleteMessage,
+  deleteMessages as tdDeleteMessages,
   editMessage,
   ensureMessageLoaded,
   getDiscussionChat,
@@ -53,6 +70,8 @@ import {
   resolveUsername,
   saveDraft,
   searchInChat,
+  sendContact,
+  sendLocation,
   sendMedia,
   sendText,
   sendVoice,
@@ -76,6 +95,7 @@ import EmptyState from '@/components/common/EmptyState';
 import MessageBubble from '@/components/chat/MessageBubble';
 import MessageInput from '@/components/chat/MessageInput';
 import PinnedBar from '@/components/chat/PinnedBar';
+import AttachSheet from '@/components/chat/AttachSheet';
 import { ChatBackground } from '@/components/chat/ChatBackground';
 import { DateSeparator, ServicePill } from '@/components/chat/ServiceMessage';
 import { ChatLinkContext, normalizeUrl, type ChatLinkHandlers } from '@/components/chat/linkActions';
@@ -99,6 +119,9 @@ interface MenuOption {
   destructive?: boolean;
   onPress: () => void;
 }
+
+/** Android 15+ da targetSdk 35+ ilovalar majburan edge-to-edge (adjustResize ishlamaydi). */
+const EDGE_TO_EDGE_FORCED = Platform.OS === 'android' && Number(Platform.Version) >= 35;
 
 const TG_LINK = /^(?:https?:\/\/)?(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)\/|^tg:/i;
 
@@ -226,6 +249,27 @@ export function ChatDetailScreen({ navigation, route }: Props) {
   const [toast, setToast] = useState<string | null>(null);
   const [search, setSearch] = useState<{ query: string; results: string[]; index: number; busy: boolean } | null>(null);
   const [initialDraft] = useState(() => getDraftText(chatId));
+  // Tanlash rejimi: tanlangan xabarlar (bo'sh — rejim o'chiq).
+  const [selected, setSelected] = useState<ReadonlySet<string>>(EMPTY_SET);
+  const selectionMode = selected.size > 0;
+  const [scrollEnabled, setScrollEnabled] = useState(true);
+  const [attach, setAttach] = useState<{ caption: string; clear: () => void } | null>(null);
+  const [propsTick, setPropsTick] = useState(0);
+
+  // Klaviatura: edge-to-edge'da oyna kichraymaydi — balandlik reanimated'dan olinadi,
+  // pastki inset ayirib bo'sh joy qo'yiladi. Android 15+ (targetSdk 36) — edge-to-edge
+  // majburiy: tizim panellari "shaffof" deb beriladi (balandlik nav panel bilan birga).
+  // Eski Android'da reanimated o'zi panellar uchun chekka qo'yadi (insets 0 bo'ladi).
+  const keyboard = useAnimatedKeyboard({
+    isStatusBarTranslucentAndroid: EDGE_TO_EDGE_FORCED,
+    isNavigationBarTranslucentAndroid: EDGE_TO_EDGE_FORCED,
+  });
+  const insets = useSafeAreaInsets();
+  const bottomInset = useSharedValue(insets.bottom);
+  useEffect(() => {
+    bottomInset.value = insets.bottom;
+  }, [insets.bottom, bottomInset]);
+  const keyboardSpacer = useAnimatedStyle(() => ({ height: Math.max(0, keyboard.height.value - bottomInset.value) }));
 
   const listRef = useRef<FlashListRef<ListItem>>(null);
   const draftRef = useRef(initialDraft);
@@ -233,6 +277,21 @@ export function ChatDetailScreen({ navigation, route }: Props) {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editingRef = useRef<ChatMessage | null>(null);
   editingRef.current = editing;
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const propsCache = useRef(new Map<string, MessageProps | null>());
+  // Surib tanlash: ko'rinib turgan qatorlar (id → View) va joriy sudrash holati.
+  const rowViews = useRef(new Map<string, View>());
+  const drag = useRef<{
+    anchor: number;
+    base: Set<string>;
+    last: number;
+    frames: { id: string; top: number; bottom: number }[];
+    /** Ro'yxat markazi (pageY) — o'lchov inverted transformni hisobga olmasa, ko'zgu o'qi. */
+    axis: number;
+    mirror: boolean | null;
+  } | null>(null);
+  const listContainerRef = useRef<View>(null);
 
   const isChannel = chatType === 'channel' || chat?.type === 'channel';
   const isGroup = !isChannel && (chatType === 'group' || chatType === 'topic_group' || chat?.type === 'group');
@@ -315,6 +374,18 @@ export function ChatDetailScreen({ navigation, route }: Props) {
     return items.reverse();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatMessages, tr.lang]);
+
+  const listDataRef = useRef(listData);
+  listDataRef.current = listData;
+  const indexById = useMemo(() => {
+    const m = new Map<string, number>();
+    listData.forEach((it, i) => {
+      if (it.kind === 'message') m.set(it.message.id, i);
+    });
+    return m;
+  }, [listData]);
+  const indexByIdRef = useRef(indexById);
+  indexByIdRef.current = indexById;
 
   // ---------------------------------------------------------------------------
   // Xabarga o'tish (javob, qadalgan, qidiruv)
@@ -461,22 +532,42 @@ export function ChatDetailScreen({ navigation, route }: Props) {
     [chatId, replyingTo],
   );
 
-  const handleSendMedia = useCallback(
+  // Biriktirish paneli: izoh asosiy maydon matnidan taklif qilinadi; yuborilsa maydon tozalanadi.
+  const attachRef = useRef(attach);
+  attachRef.current = attach;
+
+  const handleAttach = useCallback((caption: string, clear: () => void) => {
+    Keyboard.dismiss();
+    setAttach({ caption, clear });
+  }, []);
+
+  const sheetSendMedia = useCallback(
     async (items: OutgoingMedia[], caption: string) => {
-      const replyToId = replyingTo?.id;
+      await sendMedia(chatId, items, caption || undefined, replyingTo?.id);
       setReplyingTo(null);
-      draftRef.current = '';
-      try {
-        await sendMedia(chatId, items, caption || undefined, replyToId);
-      } catch (e) {
-        showAlert(t('chat.sendError'), e instanceof Error ? e.message : String(e));
-      }
+      if (caption) attachRef.current?.clear();
+    },
+    [chatId, replyingTo],
+  );
+
+  const sheetSendLocation = useCallback(
+    async (loc: { latitude: number; longitude: number; accuracy: number }) => {
+      await sendLocation(chatId, loc, replyingTo?.id);
+      setReplyingTo(null);
+    },
+    [chatId, replyingTo],
+  );
+
+  const sheetSendContact = useCallback(
+    async (userId: string) => {
+      await sendContact(chatId, userId, replyingTo?.id);
+      setReplyingTo(null);
     },
     [chatId, replyingTo],
   );
 
   // ---------------------------------------------------------------------------
-  // Xabar amallari (uzoq bosish)
+  // Xabar amallari (bosish — menyu)
   // ---------------------------------------------------------------------------
   const saveMedia = useCallback(
     async (msg: ChatMessage, mode: 'gallery' | 'share') => {
@@ -519,9 +610,9 @@ export function ChatDetailScreen({ navigation, route }: Props) {
     [chatId, fail],
   );
 
-  const handleMessageLongPress = useCallback(
+  const handleMessagePress = useCallback(
     async (msg: ChatMessage) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      if (selectedRef.current.size > 0) return;
       const props = await getMessageProps(chatId, msg.id);
       const opts: MenuOption[] = [];
       const canWrite = inputMode === 'input';
@@ -583,6 +674,17 @@ export function ChatDetailScreen({ navigation, route }: Props) {
         }
         opts.push({ key: 'share', label: t('common.share'), icon: 'share-social-outline', onPress: () => void saveMedia(msg, 'share') });
       }
+      if (!msg.isService) {
+        opts.push({
+          key: 'select',
+          label: t('chat.select'),
+          icon: 'checkmark-circle-outline',
+          onPress: () => {
+            Keyboard.dismiss();
+            setSelected(new Set([msg.id]));
+          },
+        });
+      }
       if (props ? props.canBeDeletedForAll || props.canBeDeletedOnlyForSelf : msg.senderId === 'me') {
         opts.push({ key: 'delete', label: t('common.delete'), icon: 'trash-outline', destructive: true, onPress: () => confirmDelete(msg, props) });
       }
@@ -591,6 +693,205 @@ export function ChatDetailScreen({ navigation, route }: Props) {
     },
     [chatId, inputMode, navigation, showToast, fail, saveMedia, confirmDelete],
   );
+
+  // ---------------------------------------------------------------------------
+  // Tanlash rejimi
+  // ---------------------------------------------------------------------------
+  const clearSelection = useCallback(() => {
+    drag.current = null;
+    setScrollEnabled(true);
+    setSelected(EMPTY_SET);
+  }, []);
+
+  const registerRow = useCallback((id: string, v: View | null) => {
+    if (v) rowViews.current.set(id, v);
+    else rowViews.current.delete(id);
+  }, []);
+
+  /** Uzoq bosish: xabarni tanlaydi va surib tanlashni boshlaydi. */
+  const handleSelectStart = useCallback((msg: ChatMessage) => {
+    if (msg.isService) return;
+    const anchor = indexByIdRef.current.get(msg.id);
+    if (anchor == null) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Keyboard.dismiss();
+    const base = new Set(selectedRef.current);
+    const d = {
+      anchor,
+      base,
+      last: anchor,
+      frames: [] as { id: string; top: number; bottom: number }[],
+      axis: 0,
+      mirror: null as boolean | null,
+    };
+    drag.current = d;
+    listContainerRef.current?.measure((_x, _y, _w, h, _px, py) => {
+      d.axis = py + h / 2;
+    });
+    setSelected(new Set([...base, msg.id]));
+    setScrollEnabled(false);
+    // Ko'rinib turgan qatorlarning ekrandagi o'rni (pageY bilan bir koordinatada).
+    for (const [id, v] of rowViews.current) {
+      v.measure((_x, _y, _w, h, _px, py) => {
+        if (drag.current === d && h > 0) d.frames.push({ id, top: py, bottom: py + h });
+      });
+    }
+  }, []);
+
+  const handleTouchMove = useCallback((e: GestureResponderEvent) => {
+    const d = drag.current;
+    if (!d || d.frames.length === 0) return;
+    if (d.mirror === null && d.frames.length >= 2) {
+      // Inverted ro'yxatda yangi (kichik indeks) xabar pastda bo'ladi. O'lchov
+      // transformsiz qaytsa tartib teskari chiqadi — barmoq o'rnini ko'zgulaymiz.
+      const idx = (id: string) => indexByIdRef.current.get(id) ?? 0;
+      const sorted = [...d.frames].sort((a, b) => idx(a.id) - idx(b.id));
+      d.mirror = d.axis > 0 && sorted[0]!.top < sorted[sorted.length - 1]!.top;
+    }
+    const y = d.mirror ? 2 * d.axis - e.nativeEvent.pageY : e.nativeEvent.pageY;
+    const f = d.frames.find((fr) => y >= fr.top && y < fr.bottom);
+    if (!f) return;
+    const idx = indexByIdRef.current.get(f.id);
+    if (idx == null || idx === d.last) return;
+    d.last = idx;
+    const lo = Math.min(d.anchor, idx);
+    const hi = Math.max(d.anchor, idx);
+    const next = new Set(d.base);
+    const data = listDataRef.current;
+    for (let i = lo; i <= hi; i++) {
+      const it = data[i];
+      if (it && it.kind === 'message') next.add(it.message.id);
+    }
+    setSelected(next);
+    Haptics.selectionAsync();
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    if (!drag.current) return;
+    drag.current = null;
+    setScrollEnabled(true);
+  }, []);
+
+  const toggleSelect = useCallback((msg: ChatMessage) => {
+    if (msg.isService) return;
+    Haptics.selectionAsync();
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(msg.id)) next.delete(msg.id);
+      else next.add(msg.id);
+      return next;
+    });
+  }, []);
+
+  // Android "orqaga" — tanlash rejimidan chiqadi.
+  useEffect(() => {
+    if (!selectionMode) return undefined;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      clearSelection();
+      return true;
+    });
+    return () => sub.remove();
+  }, [selectionMode, clearSelection]);
+
+  // O'chirilgan / yo'qolgan xabarlar tanlovdan chiqariladi.
+  useEffect(() => {
+    if (selectedRef.current.size === 0) return;
+    const ids = new Set(chatMessages.map((m) => m.id));
+    const cur = selectedRef.current;
+    if ([...cur].every((id) => ids.has(id))) return;
+    setSelected(new Set([...cur].filter((id) => ids.has(id))));
+  }, [chatMessages]);
+
+  // Tanlanganlar uchun getMessageProperties (Uzatish/O'chirish/Nusxalash mumkinmi).
+  useEffect(() => {
+    const missing = [...selected].filter((id) => !propsCache.current.has(id));
+    if (missing.length === 0) return;
+    void Promise.all(missing.map((id) => getMessageProps(chatId, id).then((p) => [id, p] as const))).then((res) => {
+      res.forEach(([id, p]) => propsCache.current.set(id, p));
+      setPropsTick((x) => x + 1);
+    });
+  }, [selected, chatId]);
+
+  /** Tanlangan xabarlar xronologik tartibda. */
+  const selectedMessages = useMemo(
+    () => (selected.size ? chatMessages.filter((m) => selected.has(m.id)) : EMPTY),
+    [selected, chatMessages],
+  );
+
+  const selectionInfo = useMemo(() => {
+    const ps = selectedMessages.map((m) => propsCache.current.get(m.id));
+    const loaded = ps.every((p) => p !== undefined);
+    const ok = (f: (p: MessageProps) => boolean) => loaded && ps.length > 0 && ps.every((p) => p != null && f(p));
+    return {
+      loaded,
+      canForward: ok((p) => p.canBeForwarded),
+      canDelete: ok((p) => p.canBeDeletedForAll || p.canBeDeletedOnlyForSelf),
+      allForAll: ok((p) => p.canBeDeletedForAll),
+      allForSelf: ok((p) => p.canBeDeletedOnlyForSelf),
+      canCopy: ok((p) => p.canBeCopied) && selectedMessages.some((m) => !!m.text),
+      canReply: inputMode === 'input' && selectedMessages.length === 1 && ok((p) => p.canBeReplied),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMessages, propsTick, inputMode]);
+
+  const copySelected = useCallback(() => {
+    const text = selectedMessages
+      .map((m) => m.text ?? '')
+      .filter((x) => x.length > 0)
+      .join('\n\n');
+    if (!text) return;
+    Clipboard.setString(text);
+    showToast(t('chat.messagesCopied'));
+    clearSelection();
+  }, [selectedMessages, showToast, clearSelection]);
+
+  const forwardSelected = useCallback(() => {
+    const ids = selectedMessages.map((m) => m.id);
+    if (ids.length === 0) return;
+    clearSelection();
+    navigation.navigate('ForwardMessage', { messageId: ids.join(','), sourceChatId: chatId });
+  }, [selectedMessages, clearSelection, navigation, chatId]);
+
+  const replySelected = useCallback(() => {
+    const msg = selectedMessages[0];
+    if (!msg) return;
+    clearSelection();
+    setEditing(null);
+    setReplyingTo(msg);
+  }, [selectedMessages, clearSelection]);
+
+  const deleteSelected = useCallback(() => {
+    const msgs = selectedMessages;
+    if (msgs.length === 0) return;
+    const ids = msgs.map((m) => m.id);
+    const { allForAll, allForSelf } = selectionInfo;
+    const run = (mode: 'all' | 'self' | 'auto') => () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      clearSelection();
+      if (mode === 'all') {
+        tdDeleteMessages(chatId, ids, true).catch(fail);
+        return;
+      }
+      if (mode === 'self') {
+        tdDeleteMessages(chatId, ids, false).catch(fail);
+        return;
+      }
+      // Aralash: faqat o'zi uchun mumkin bo'lganlari — revoke=false, qolganlari — revoke=true.
+      const selfIds = ids.filter((id) => propsCache.current.get(id)?.canBeDeletedOnlyForSelf);
+      const allIds = ids.filter((id) => !selfIds.includes(id));
+      Promise.all([tdDeleteMessages(chatId, selfIds, false), tdDeleteMessages(chatId, allIds, true)]).catch(fail);
+    };
+    const buttons: { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[] = [];
+    if (allForAll && allForSelf) {
+      buttons.push({ text: t('chat.deleteForAll'), style: 'destructive', onPress: run('all') });
+      buttons.push({ text: t('chat.deleteForMe'), style: 'destructive', onPress: run('self') });
+    } else {
+      buttons.push({ text: t('common.delete'), style: 'destructive', onPress: run(allForAll ? 'all' : allForSelf ? 'self' : 'auto') });
+    }
+    buttons.push({ text: t('common.cancel'), style: 'cancel' });
+    showAlert(tr.p('chat.deleteMessages', ids.length), t('chat.deleteMessagesConfirm'), buttons);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMessages, selectionInfo, chatId, fail, clearSelection, tr.lang]);
 
   const menuReactions = useMemo(() => (menu && !menu.message.isService ? reactionsFor(chatId) : []), [menu, chatId]);
   const menuChosen = useMemo(
@@ -776,7 +1077,7 @@ export function ChatDetailScreen({ navigation, route }: Props) {
           <ServicePill
             text={message.text ?? ''}
             highlighted={highlightId === message.id}
-            onLongPress={() => void handleMessageLongPress(message)}
+            onLongPress={selectionMode ? undefined : () => void handleMessagePress(message)}
           />
         );
       }
@@ -787,7 +1088,12 @@ export function ChatDetailScreen({ navigation, route }: Props) {
           showSender={isGroup && message.senderId !== 'me'}
           isChannel={isChannel}
           highlighted={highlightId === message.id}
-          onLongPress={handleMessageLongPress}
+          onPress={handleMessagePress}
+          onLongPress={handleSelectStart}
+          selectionMode={selectionMode}
+          selected={selected.has(message.id)}
+          onToggleSelect={toggleSelect}
+          registerRow={registerRow}
           onReplyPress={handleReplyPress}
           onReactionPress={handleReactionPress}
           onMediaPress={handleMediaPress}
@@ -797,16 +1103,42 @@ export function ChatDetailScreen({ navigation, route }: Props) {
         />
       );
     },
-    [isChannel, isGroup, highlightId, handleMessageLongPress, handleReplyPress, handleReactionPress, handleMediaPress, handleButtonPress, handleCommentsPress, handleVote],
+    [isChannel, isGroup, highlightId, selectionMode, selected, handleMessagePress, handleSelectStart, toggleSelect, registerRow, handleReplyPress, handleReactionPress, handleMediaPress, handleButtonPress, handleCommentsPress, handleVote],
   );
 
   const keyExtractor = useCallback((item: ListItem) => (item.kind === 'separator' ? item.id : item.message.id), []);
   const getItemType = useCallback((item: ListItem) => item.kind, []);
+  const extraData = useMemo(() => ({ highlightId, selected }), [highlightId, selected]);
 
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
-  const header = search ? (
+  const header = selectionMode ? (
+    <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border, paddingHorizontal: theme.spacing.sm }]}>
+      <TouchableOpacity onPress={clearSelection} style={styles.backButton} accessibilityRole="button" accessibilityLabel={tr('chat.selection.exit')}>
+        <Ionicons name="close" size={24} color={theme.colors.text} />
+      </TouchableOpacity>
+      <Text style={[theme.textStyles.chatName, styles.selectionTitle, { color: theme.colors.text }]} numberOfLines={1}>
+        {tr.p('chat.selected', selected.size)}
+      </Text>
+      {!selectionInfo.loaded ? <ActivityIndicator color={theme.colors.primary} style={{ marginHorizontal: 8 }} /> : null}
+      {selectionInfo.canCopy ? (
+        <TouchableOpacity onPress={copySelected} style={styles.headerIconButton} accessibilityRole="button" accessibilityLabel={tr('common.copy')}>
+          <Ionicons name="copy-outline" size={22} color={theme.colors.text} />
+        </TouchableOpacity>
+      ) : null}
+      {selectionInfo.canForward ? (
+        <TouchableOpacity onPress={forwardSelected} style={styles.headerIconButton} accessibilityRole="button" accessibilityLabel={tr('chat.forward')}>
+          <Ionicons name="arrow-redo-outline" size={23} color={theme.colors.text} />
+        </TouchableOpacity>
+      ) : null}
+      {selectionInfo.canDelete ? (
+        <TouchableOpacity onPress={deleteSelected} style={styles.headerIconButton} accessibilityRole="button" accessibilityLabel={tr('common.delete')}>
+          <Ionicons name="trash-outline" size={22} color={theme.colors.text} />
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  ) : search ? (
     <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border, paddingHorizontal: theme.spacing.sm }]}>
       <TouchableOpacity onPress={() => setSearch(null)} style={styles.backButton} accessibilityRole="button" accessibilityLabel={tr('common.close')}>
         <Ionicons name="arrow-back" size={24} color={theme.colors.primary} />
@@ -926,7 +1258,7 @@ export function ChatDetailScreen({ navigation, route }: Props) {
         initialText={initialDraft}
         onSendText={handleSendText}
         onSendVoice={handleSendVoice}
-        onSendMedia={handleSendMedia}
+        onAttach={handleAttach}
         onCancelReply={() => setReplyingTo(null)}
         onCancelEdit={() => setEditing(null)}
         onTextChange={(v) => {
@@ -937,6 +1269,27 @@ export function ChatDetailScreen({ navigation, route }: Props) {
 
   const showPinned = pinned != null && hiddenPinnedId !== pinned.id && !search;
 
+  // Tanlash rejimida pastda Telegram'dagi kabi "Javob berish" / "Uzatish" paneli.
+  // MessageInput yashiriladi, lekin o'chirilmaydi (yozilgan matn saqlanadi).
+  const selectionBar = selectionMode ? (
+    <View style={[styles.selectionBar, { backgroundColor: theme.colors.inputBackground, borderTopColor: theme.colors.border, paddingBottom: insets.bottom }]}>
+      {selectionInfo.canReply ? (
+        <TouchableOpacity onPress={replySelected} style={styles.selectionAction} accessibilityRole="button">
+          <Ionicons name="arrow-undo-outline" size={22} color={theme.colors.primary} />
+          <Text style={[theme.textStyles.buttonMedium, { color: theme.colors.primary }]}>{tr('chat.reply')}</Text>
+        </TouchableOpacity>
+      ) : (
+        <View />
+      )}
+      {selectionInfo.canForward ? (
+        <TouchableOpacity onPress={forwardSelected} style={styles.selectionAction} accessibilityRole="button">
+          <Text style={[theme.textStyles.buttonMedium, { color: theme.colors.primary }]}>{tr('chat.forward')}</Text>
+          <Ionicons name="arrow-redo-outline" size={22} color={theme.colors.primary} />
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  ) : null;
+
   return (
     <ChatLinkContext.Provider value={linkHandlers}>
       <SafeAreaView style={[styles.root, { backgroundColor: theme.colors.background }]} edges={['top']}>
@@ -946,7 +1299,14 @@ export function ChatDetailScreen({ navigation, route }: Props) {
           <PinnedBar message={pinned} onPress={() => void jumpTo(pinned.id)} onDismiss={() => setHiddenPinnedId(pinned.id)} />
         ) : null}
 
-        <View style={styles.listContainer}>
+        <View
+          ref={listContainerRef}
+          collapsable={false}
+          style={styles.listContainer}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
+        >
           <ChatBackground />
           {isLoading && chatMessages.length === 0 ? (
             <LoadingState message={tr('chat.loadingMessages')} />
@@ -957,7 +1317,8 @@ export function ChatDetailScreen({ navigation, route }: Props) {
               keyExtractor={keyExtractor}
               renderItem={renderItem}
               getItemType={getItemType}
-              extraData={highlightId}
+              extraData={extraData}
+              scrollEnabled={scrollEnabled}
               inverted
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingVertical: theme.spacing.sm }}
@@ -979,7 +1340,9 @@ export function ChatDetailScreen({ navigation, route }: Props) {
           ) : null}
         </View>
 
-        {bottom}
+        <View style={selectionMode ? styles.hidden : undefined}>{bottom}</View>
+        {selectionBar}
+        <Animated.View style={keyboardSpacer} />
 
         <ContextMenu
           visible={menu !== null}
@@ -989,6 +1352,17 @@ export function ChatDetailScreen({ navigation, route }: Props) {
           onReact={handleReact}
           onClose={() => setMenu(null)}
         />
+
+        {attach ? (
+          <AttachSheet
+            initialCaption={attach.caption}
+            keyboardHeight={keyboard.height}
+            onClose={() => setAttach(null)}
+            onSendMedia={sheetSendMedia}
+            onSendLocation={sheetSendLocation}
+            onSendContact={sheetSendContact}
+          />
+        ) : null}
       </SafeAreaView>
     </ChatLinkContext.Provider>
   );
@@ -1015,6 +1389,7 @@ function isMediaOnly(m: ChatMessage): boolean {
 }
 
 const EMPTY: ChatMessage[] = [];
+const EMPTY_SET: ReadonlySet<string> = new Set<string>();
 /** Sarlavha menyusi uchun (reaksiyalarsiz) bo'sh xabar. */
 const SENTINEL = { id: '', isService: true, reactions: [] } as unknown as ChatMessage;
 
@@ -1031,6 +1406,16 @@ const styles = StyleSheet.create({
   headerIconButton: { padding: 6 },
   searchInput: { flex: 1, fontSize: 17, paddingVertical: 6, paddingHorizontal: 6 },
   listContainer: { flex: 1 },
+  hidden: { display: 'none' },
+  selectionTitle: { flex: 1, marginLeft: 12 },
+  selectionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 8,
+  },
+  selectionAction: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 50, paddingHorizontal: 12 },
   emptyMessages: { flex: 1, minHeight: 400 },
   bottomButton: { height: 50, alignItems: 'center', justifyContent: 'center', borderTopWidth: StyleSheet.hairlineWidth },
   toast: {

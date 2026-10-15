@@ -16,7 +16,7 @@ import * as Haptics from '@/utils/haptics';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-type Reveal = { uri: string; x: number; y: number } | null;
+type Reveal = { uri: string; x: number; y: number; mode: 'dark' | 'light' } | null;
 let setGlobal: ((r: Reveal) => void) | null = null;
 let busy = false;
 
@@ -39,9 +39,8 @@ export async function toggleThemeAnimated(x?: number, y?: number): Promise<void>
   busy = true;
   try {
     const uri = await AppNative.captureScreen();
-    setGlobal({ uri, x: x ?? width / 2, y: y ?? height / 2 });
-    // Surat chizilgach mavzuni almashtiramiz (host o'zi animatsiyani boshlaydi).
-    setTimeout(() => useUIStore.getState().setThemeMode(mode), 60);
+    // Surat ekranga chiqqach (onLoad) host mavzuni almashtiradi va animatsiyani boshlaydi.
+    setGlobal({ uri, x: x ?? width / 2, y: y ?? height / 2, mode });
   } catch {
     useUIStore.getState().setThemeMode(mode);
     busy = false;
@@ -60,22 +59,33 @@ export function ThemeRevealHost(): React.JSX.Element | null {
     };
   }, []);
 
+  const [loaded, setLoaded] = useState(false);
+
+  // Surat yuklanmasa ham (kam uchraydi) 250 ms dan keyin davom etamiz.
   useEffect(() => {
     if (!reveal) return;
+    setLoaded(false);
+    const t = setTimeout(() => setLoaded(true), 250);
+    return () => clearTimeout(t);
+  }, [reveal]);
+
+  useEffect(() => {
+    if (!reveal || !loaded) return;
     r.value = 0;
+    useUIStore.getState().setThemeMode(reveal.mode);
     const max = Math.hypot(Math.max(reveal.x, width - reveal.x), Math.max(reveal.y, height - reveal.y));
     const done = () => {
       setReveal(null);
       busy = false;
     };
-    // Mavzu almashib, yangi ekran chizilishiga vaqt beramiz.
+    // Yangi mavzu bir kadr chizilishiga vaqt beramiz.
     const timer = setTimeout(() => {
-      r.value = withTiming(max, { duration: 520, easing: Easing.out(Easing.cubic) }, (finished) => {
+      r.value = withTiming(max, { duration: 360, easing: Easing.out(Easing.quad) }, (finished) => {
         if (finished) runOnJS(done)();
       });
-    }, 120);
+    }, 32);
     return () => clearTimeout(timer);
-  }, [reveal, r, width, height]);
+  }, [reveal, loaded, r, width, height]);
 
   const circleProps = useAnimatedProps(() => ({ r: r.value }));
 
@@ -97,6 +107,7 @@ export function ThemeRevealHost(): React.JSX.Element | null {
           href={{ uri: reveal.uri }}
           preserveAspectRatio="xMidYMid slice"
           mask="url(#themeHole)"
+          onLoad={() => setLoaded(true)}
         />
       </Svg>
     </View>

@@ -16,6 +16,7 @@ import { td } from '@/services/tdlib/client';
 import { startNotifications, stopNotifications, consumeLaunchChat } from '@/services/notifications';
 import { onOpenChatFromNotification } from '@/services/native';
 import { startNetworkSync, startStoragePolicy } from '@/services/tdlib/storage';
+import { startStories, stopStories } from '@/services/tdlib/stories';
 import type { RootStackParamList } from '@/navigation/types';
 
 const navRef = createNavigationContainerRef<RootStackParamList>();
@@ -56,6 +57,7 @@ function useSessionServices(): void {
     startNotifications();
     startNetworkSync();
     startStoragePolicy();
+    startStories();
     void consumeLaunchChat().then((chatId) => {
       if (chatId) void openChatFromNotification(chatId);
     });
@@ -63,6 +65,7 @@ function useSessionServices(): void {
     return () => {
       off();
       stopNotifications();
+      stopStories();
     };
   }, [isAuthenticated]);
 }

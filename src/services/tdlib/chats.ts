@@ -979,8 +979,16 @@ function toChat(c: TdChat, key = 'main'): Chat {
     isOnline: otherUser?.status === 'online',
     isTyping: typingText(String(c.id)) !== undefined,
     typingUserName: typingText(String(c.id)),
+    draftText: draftTextOf(c) || undefined,
+    draftDate: c.draft_message?.date ? new Date(c.draft_message.date * 1000) : undefined,
     updatedAt: new Date((c.last_message?.date ?? 0) * 1000),
   };
+}
+
+/** draftMessage.content (draftMessageContentText) — matn. */
+function draftTextOf(c: TdChat | undefined): string {
+  const d = c?.draft_message;
+  return d?.content?.['@type'] === 'draftMessageContentText' ? d.content.text?.text ?? '' : '';
 }
 
 // ---------------------------------------------------------------------------
@@ -1635,6 +1643,69 @@ export async function deleteMessage(chatIdStr: string, messageId: string, forAll
   });
 }
 
+/** Bir nechta xabarni bitta so'rovda o'chirish (tanlash rejimi). */
+export async function deleteMessages(chatIdStr: string, messageIds: string[], forAll: boolean): Promise<void> {
+  if (messageIds.length === 0) return;
+  await td({
+    '@type': 'deleteMessages',
+    chat_id: Number(chatIdStr),
+    message_ids: messageIds.map(Number),
+    revoke: forAll,
+  });
+}
+
+/** Joylashuv (inputMessageLocation — bu TDLib versiyasida faqat `location` maydoni bor). */
+export async function sendLocation(
+  chatIdStr: string,
+  loc: { latitude: number; longitude: number; accuracy?: number },
+  replyToId?: string,
+): Promise<void> {
+  const chatId = Number(chatIdStr);
+  const sent = await td<TdMessage & TdObject>({
+    '@type': 'sendMessage',
+    chat_id: chatId,
+    reply_to: replyToInput(replyToId),
+    input_message_content: {
+      '@type': 'inputMessageLocation',
+      location: {
+        '@type': 'location',
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        horizontal_accuracy: Math.max(0, Math.min(1500, loc.accuracy ?? 0)),
+      },
+    },
+  });
+  pushSent(chatId, sent);
+}
+
+/** Kontakt yuborish: telefon raqami getUser'dan olinadi (yashirilgan bo'lsa bo'sh qoladi). */
+export async function sendContact(chatIdStr: string, userIdStr: string, replyToId?: string): Promise<void> {
+  const chatId = Number(chatIdStr);
+  const uid = Number(userIdStr);
+  let user = users.get(uid);
+  if (!user || !user.phone_number) {
+    user = (await td<TdUser & TdObject>({ '@type': 'getUser', user_id: uid }).catch(() => undefined)) ?? user;
+    if (user) users.set(uid, user);
+  }
+  const sent = await td<TdMessage & TdObject>({
+    '@type': 'sendMessage',
+    chat_id: chatId,
+    reply_to: replyToInput(replyToId),
+    input_message_content: {
+      '@type': 'inputMessageContact',
+      contact: {
+        '@type': 'contact',
+        phone_number: user?.phone_number ?? '',
+        first_name: user?.first_name ?? '',
+        last_name: user?.last_name ?? '',
+        vcard: '',
+        user_id: uid,
+      },
+    },
+  });
+  pushSent(chatId, sent);
+}
+
 export async function toggleReaction(
   chatIdStr: string,
   messageId: string,
@@ -1776,8 +1847,7 @@ export async function clearHistory(chatIdStr: string, forAll = false): Promise<v
 
 /** Chat qoralamasi matni (draftMessageContentText). */
 export function getDraftText(chatIdStr: string): string {
-  const d = chats.get(Number(chatIdStr))?.draft_message;
-  return d?.content?.['@type'] === 'draftMessageContentText' ? d.content.text?.text ?? '' : '';
+  return draftTextOf(chats.get(Number(chatIdStr)));
 }
 
 /** Qoralamani saqlaydi (bo'sh matn — o'chiradi). O'zgarmagan bo'lsa so'rov yuborilmaydi. */

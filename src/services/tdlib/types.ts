@@ -126,7 +126,7 @@ export interface TdChat {
   notification_settings: { mute_for: number };
   is_marked_as_unread?: boolean;
   accent_color_id?: number;
-  draft_message?: { content?: { '@type': string; text?: TdFormattedText } } | null;
+  draft_message?: { date?: number; content?: { '@type': string; text?: TdFormattedText } } | null;
   permissions?: Record<string, boolean>;
   last_read_inbox_message_id?: number;
 }
