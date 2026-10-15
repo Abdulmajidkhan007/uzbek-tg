@@ -19,6 +19,9 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.location.Location
+import android.location.LocationManager
+import com.facebook.react.bridge.WritableArray
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -65,10 +68,10 @@ class AppNativeModule(private val reactContext: ReactApplicationContext) :
     activity.runOnUiThread {
       try {
         val view = activity.window.decorView.rootView
-        val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+        val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.RGB_565)
         view.draw(Canvas(bitmap))
         val file = File(reactContext.cacheDir, "theme_snap_${System.currentTimeMillis()}.jpg")
-        FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+        FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 75, it) }
         bitmap.recycle()
         // Eski suratlarni tozalash.
         reactContext.cacheDir.listFiles()?.filter {
@@ -468,6 +471,191 @@ class AppNativeModule(private val reactContext: ReactApplicationContext) :
 
   // -------------------------------------------------------------------------
 
+  // -------------------------------------------------------------------------
+  // Galereya (Telegram'dagi kabi biriktirish oynasi uchun)
+  // -------------------------------------------------------------------------
+
+  private fun mediaPermissions(): Array<String> =
+      if (Build.VERSION.SDK_INT >= 33)
+          arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+      else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+
+  private fun hasAll(perms: Array<String>): Boolean =
+      perms.all { ContextCompat.checkSelfPermission(reactContext, it) == PackageManager.PERMISSION_GRANTED }
+
+  @ReactMethod
+  fun hasMediaPermission(promise: Promise) {
+    // Android 14+: foydalanuvchi faqat ba'zi rasmlarga ruxsat bergan bo'lishi mumkin.
+    val partial = Build.VERSION.SDK_INT >= 34 &&
+        ContextCompat.checkSelfPermission(reactContext, "android.permission.READ_MEDIA_VISUAL_USER_SELECTED") ==
+            PackageManager.PERMISSION_GRANTED
+    promise.resolve(hasAll(mediaPermissions()) || partial)
+  }
+
+  @ReactMethod
+  fun requestMediaPermission(promise: Promise) {
+    val perms = if (Build.VERSION.SDK_INT >= 34)
+        mediaPermissions() + "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
+    else mediaPermissions()
+    requestPermissions(perms, promise)
+  }
+
+  /** Oxirgi rasm va videolar (yangi → eski). */
+  @ReactMethod
+  fun getRecentMedia(limit: Double, promise: Promise) {
+    Thread {
+      try {
+        val out: WritableArray = Arguments.createArray()
+        val uri = MediaStore.Files.getContentUri("external")
+        val projection = arrayOf(
+            MediaStore.Files.FileColumns._ID,
+            MediaStore.Files.FileColumns.MEDIA_TYPE,
+            MediaStore.Files.FileColumns.MIME_TYPE,
+            MediaStore.Files.FileColumns.WIDTH,
+            MediaStore.Files.FileColumns.HEIGHT,
+            MediaStore.Files.FileColumns.DATE_ADDED,
+            MediaStore.Video.VideoColumns.DURATION,
+        )
+        val selection = "${MediaStore.Files.FileColumns.MEDIA_TYPE}=? OR ${MediaStore.Files.FileColumns.MEDIA_TYPE}=?"
+        val args = arrayOf(
+            MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
+            MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString())
+        val order = "${MediaStore.Files.FileColumns.DATE_ADDED} DESC"
+        reactContext.contentResolver.query(uri, projection, selection, args, order)?.use { c ->
+          var n = 0
+          val max = limit.toInt()
+          while (c.moveToNext() && n < max) {
+            val id = c.getLong(0)
+            val isVideo = c.getInt(1) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
+            val base = if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            val m = Arguments.createMap()
+            m.putString("uri", Uri.withAppendedPath(base, id.toString()).toString())
+            m.putString("id", id.toString())
+            m.putBoolean("isVideo", isVideo)
+            m.putString("mime", c.getString(2) ?: if (isVideo) "video/mp4" else "image/jpeg")
+            m.putInt("width", c.getInt(3))
+            m.putInt("height", c.getInt(4))
+            m.putDouble("date", c.getLong(5).toDouble())
+            m.putDouble("duration", if (isVideo) c.getLong(6) / 1000.0 else 0.0)
+            out.pushMap(m)
+            n++
+          }
+        }
+        promise.resolve(out)
+      } catch (e: Throwable) {
+        promise.reject("MEDIA_FAILED", e.message, e)
+      }
+    }.start()
+  }
+
+  /** content:// URI'ni kesh papkaga nusxalaydi (TDLib fayl yo'li bilan ishlaydi). */
+  @ReactMethod
+  fun copyToCache(uriStr: String, promise: Promise) {
+    Thread {
+      try {
+        val uri = Uri.parse(uriStr)
+        var name = "media"
+        reactContext.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+          if (c.moveToFirst()) name = c.getString(0) ?: name
+        }
+        val dir = File(reactContext.cacheDir, "picked").apply { mkdirs() }
+        val out = File(dir, "${System.currentTimeMillis()}_${name.replace(Regex("[/\\\\]"), "_")}")
+        reactContext.contentResolver.openInputStream(uri)?.use { input ->
+          FileOutputStream(out).use { input.copyTo(it) }
+        }
+        val map = Arguments.createMap()
+        map.putString("path", out.absolutePath)
+        map.putString("name", name)
+        map.putDouble("size", out.length().toDouble())
+        map.putString("mime", reactContext.contentResolver.getType(uri) ?: "application/octet-stream")
+        promise.resolve(map)
+      } catch (e: Throwable) {
+        promise.reject("COPY_FAILED", e.message, e)
+      }
+    }.start()
+  }
+
+  // -------------------------------------------------------------------------
+  // Joylashuv (xabar sifatida yuborish uchun)
+  // -------------------------------------------------------------------------
+
+  @ReactMethod
+  fun requestLocationPermission(promise: Promise) {
+    requestPermissions(
+        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), promise)
+  }
+
+  @ReactMethod
+  fun getCurrentLocation(promise: Promise) {
+    val fine = ContextCompat.checkSelfPermission(reactContext, Manifest.permission.ACCESS_FINE_LOCATION) ==
+        PackageManager.PERMISSION_GRANTED
+    val coarse = ContextCompat.checkSelfPermission(reactContext, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+        PackageManager.PERMISSION_GRANTED
+    if (!fine && !coarse) {
+      promise.reject("NO_PERMISSION", "Joylashuv ruxsati yo'q")
+      return
+    }
+    val lm = reactContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    val providers = lm.getProviders(true)
+    var best: Location? = null
+    try {
+      for (p in providers) {
+        @Suppress("MissingPermission")
+        val l = lm.getLastKnownLocation(p) ?: continue
+        if (best == null || l.time > best.time) best = l
+      }
+    } catch (_: SecurityException) {}
+    val fresh = best != null && System.currentTimeMillis() - best.time < 2 * 60 * 1000
+    if (fresh || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+      if (best == null) {
+        promise.reject("NO_LOCATION", "Joylashuv aniqlanmadi")
+        return
+      }
+      promise.resolve(locationMap(best))
+      return
+    }
+    val provider = when {
+      providers.contains(LocationManager.GPS_PROVIDER) && fine -> LocationManager.GPS_PROVIDER
+      providers.contains(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
+      providers.isNotEmpty() -> providers[0]
+      else -> null
+    }
+    if (provider == null) {
+      if (best != null) promise.resolve(locationMap(best)) else promise.reject("NO_LOCATION", "Joylashuv o'chirilgan")
+      return
+    }
+    val fallback = best
+    try {
+      @Suppress("MissingPermission")
+      lm.getCurrentLocation(provider, null, ContextCompat.getMainExecutor(reactContext)) { l ->
+        val r = l ?: fallback
+        if (r != null) promise.resolve(locationMap(r)) else promise.reject("NO_LOCATION", "Joylashuv aniqlanmadi")
+      }
+    } catch (e: SecurityException) {
+      promise.reject("NO_PERMISSION", e.message, e)
+    }
+  }
+
+  private fun locationMap(l: Location) = Arguments.createMap().apply {
+    putDouble("latitude", l.latitude)
+    putDouble("longitude", l.longitude)
+    putDouble("accuracy", l.accuracy.toDouble())
+  }
+
+  private fun requestPermissions(perms: Array<String>, promise: Promise) {
+    if (hasAll(perms)) {
+      promise.resolve(true)
+      return
+    }
+    val activity = reactContext.currentActivity
+    if (activity == null) {
+      promise.resolve(false)
+      return
+    }
+    pendingPermission = perms[0] to promise
+    ActivityCompat.requestPermissions(activity, perms, REQ_PERMISSION)
+  }
+
   private fun requestPermission(permission: String, promise: Promise) {
     if (ContextCompat.checkSelfPermission(reactContext, permission) == PackageManager.PERMISSION_GRANTED) {
       promise.resolve(true)
@@ -503,7 +691,7 @@ class AppNativeModule(private val reactContext: ReactApplicationContext) :
       if (requestCode != REQ_PERMISSION) return
       val pending = pendingPermission ?: return
       pendingPermission = null
-      pending.second.resolve(grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)
+      pending.second.resolve(grantResults.any { it == PackageManager.PERMISSION_GRANTED })
     }
   }
 }

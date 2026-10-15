@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   type GestureResponderEvent,
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -137,7 +136,6 @@ function ChatListBody({ listKey, data, header, emptyText }: ChatListBodyProps): 
   const tr = useT();
   const navigation = useNavigation<Nav>();
   const isLoading = useChatStore((s) => s.isLoadingChats);
-  const [refreshing, setRefreshing] = useState(false);
 
   const handlePress = useCallback(
     (chatId: string) => {
@@ -167,15 +165,6 @@ function ChatListBody({ listKey, data, header, emptyText }: ChatListBodyProps): 
     [data, listKey],
   );
 
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await loadMoreChats(listKey);
-    } finally {
-      setRefreshing(false);
-    }
-  }, [listKey]);
-
   return (
     <FlashList
       data={data}
@@ -193,14 +182,6 @@ function ChatListBody({ listKey, data, header, emptyText }: ChatListBodyProps): 
       }
       onEndReached={() => void loadMoreChats(listKey)}
       onEndReachedThreshold={0.6}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          tintColor={theme.colors.primary}
-          colors={[theme.colors.primary]}
-        />
-      }
       contentContainerStyle={{ paddingBottom: 120 }}
       extraData={tr.lang}
     />

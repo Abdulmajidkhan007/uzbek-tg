@@ -18,7 +18,26 @@ export interface Recording {
   waveform: string;
 }
 
+export interface GalleryItem {
+  uri: string;
+  id: string;
+  isVideo: boolean;
+  mime: string;
+  width: number;
+  height: number;
+  date: number;
+  /** Video davomiyligi (soniya). */
+  duration: number;
+}
+
 interface AppNativeApi {
+  hasMediaPermission(): Promise<boolean>;
+  requestMediaPermission(): Promise<boolean>;
+  getRecentMedia(limit: number): Promise<GalleryItem[]>;
+  /** content:// → kesh fayl yo'li. */
+  copyToCache(uri: string): Promise<PickedFile>;
+  requestLocationPermission(): Promise<boolean>;
+  getCurrentLocation(): Promise<{ latitude: number; longitude: number; accuracy: number }>;
   captureScreen(): Promise<string>;
   hasMicPermission(): Promise<boolean>;
   requestMicPermission(): Promise<boolean>;
