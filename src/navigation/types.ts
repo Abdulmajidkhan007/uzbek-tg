@@ -78,6 +78,7 @@ export type PrivacySettingKey =
   | 'showPhoneNumber'
   | 'showBio'
   | 'showBirthdate'
+  | 'showProfileAudio'
   | 'allowFindingByPhoneNumber'
   | 'allowChatInvites'
   | 'allowCalls'

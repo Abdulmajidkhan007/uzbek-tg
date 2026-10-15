@@ -10,6 +10,8 @@ export interface AuthUser {
   bio?: string;
   avatarUrl?: string;
   isVerified: boolean;
+  /** Telegram Premium obunasi bormi. */
+  isPremium?: boolean;
 }
 
 interface AuthState {

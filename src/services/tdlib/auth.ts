@@ -52,6 +52,7 @@ export function toAuthUser(u: TdUser): AuthUser {
     username: u.usernames?.active_usernames[0],
     avatarUrl: fileUri(u.profile_photo?.small),
     isVerified: false,
+    isPremium: u.is_premium ?? false,
   };
 }
 

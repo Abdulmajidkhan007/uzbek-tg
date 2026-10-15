@@ -15,6 +15,7 @@ import { useT } from '@/i18n';
 import { SettingsCard, SettingsRow } from '@/components/ui/SettingsRow';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { showAlert } from '@/components/ui/Dialog';
+import { useAuthStore } from '@/stores/auth.store';
 import type { PrivacySettingKey, SettingsStackParamList } from '@/navigation/types';
 import {
   errorText,
@@ -38,7 +39,11 @@ const TITLE: Record<PrivacySettingKey, string> = {
   allowCalls: 'settings.privacy.calls',
   allowPrivateVoiceAndVideoNoteMessages: 'settings.privacy.voice',
   allowChatInvites: 'settings.privacy.invites',
+  showProfileAudio: 'settings.privacy.savedMusic',
 };
+
+/** Faqat Telegram Premium o'zgartira oladigan sozlamalar. */
+const PREMIUM_ONLY = new Set<PrivacySettingKey>(['allowPrivateVoiceAndVideoNoteMessages']);
 
 /** "Ruxsat" ma'nosidagi sozlamalar (ko'rsatish emas). */
 const ALLOW_KIND = new Set<PrivacySettingKey>([
@@ -53,18 +58,27 @@ function RadioRow({
   selected,
   onPress,
   last,
+  locked,
 }: {
   label: string;
   selected: boolean;
   onPress: () => void;
   last?: boolean;
+  /** Premium kerak — Telegram'dagi kabi qulf belgisi. */
+  locked?: boolean;
 }): React.JSX.Element {
   const c = useTheme().colors;
   return (
     <Pressable onPress={onPress} android_ripple={{ color: c.surfaceHighlight }} style={styles.radioRow}>
-      <View style={[styles.radio, { borderColor: selected ? c.primary : c.textTertiary }]}>
-        {selected ? <View style={[styles.radioDot, { backgroundColor: c.primary }]} /> : null}
-      </View>
+      {locked ? (
+        <View style={[styles.radio, { borderColor: selected ? c.primary : c.textTertiary }]}>
+          <Ionicons name="lock-closed" size={12} color={selected ? c.primary : c.textTertiary} />
+        </View>
+      ) : (
+        <View style={[styles.radio, { borderColor: selected ? c.primary : c.textTertiary }]}>
+          {selected ? <View style={[styles.radioDot, { backgroundColor: c.primary }]} /> : null}
+        </View>
+      )}
       <View
         style={[styles.radioBody, !last && { borderBottomColor: c.border, borderBottomWidth: StyleSheet.hairlineWidth }]}
       >
@@ -121,6 +135,8 @@ function RuleSection({
   const c = useTheme().colors;
   const t = useT();
   const { rules, error, choose } = useRules(setting);
+  const isPremium = useAuthStore((st) => st.currentUser?.isPremium ?? false);
+  const premiumLocked = PREMIUM_ONLY.has(setting) && !isPremium;
 
   useEffect(() => {
     if (rules && onBase) onBase(summarizeRules(rules).base);
@@ -155,7 +171,12 @@ function RuleSection({
             key={b}
             label={label(b)}
             selected={s.base === b}
-            onPress={() => choose(b)}
+            locked={premiumLocked && b !== 'everybody'}
+            onPress={() =>
+              premiumLocked && b !== 'everybody'
+                ? showAlert(t('settings.privacy.premiumTitle'), t('settings.privacy.premiumRequired'))
+                : choose(b)
+            }
             last={i === options.length - 1}
           />
         ))}
