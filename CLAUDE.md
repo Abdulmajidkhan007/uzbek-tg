@@ -25,6 +25,5 @@
 - Git oqimi: ish sessiya branch'ida commit + push → `main` ga PR ochiladi →
   Claude o'zi merge qiladi. Eng oxirgi ish doim `main` da bo'lishi kerak
   (APK workflow faqat `main` ga push'da ishga tushadi).
-- Repo private: `releases/latest/download/uzbek-tg.apk` havolasi faqat
-  GitHub'ga kirgan (login) brauzerda ochiladi; release CI tugagandan keyin
-  paydo bo'ladi.
+- Repo public (2026-10-21 tekshirildi): `releases/latest/download/uzbek-tg.apk`
+  havolasi login'siz ochiladi; release CI tugagandan keyin paydo bo'ladi.

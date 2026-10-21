@@ -1,6 +1,7 @@
 # uzbek-tg — reja
 
-> Oxirgi yangilanish: 2026-10-12 (0-faza tasdiqlandi; 1-faza kodi yozildi)
+> Oxirgi yangilanish: 2026-10-21 (hujjat tekshiruvi: 2026-10-15 ishlari va keyingi qadam yozildi;
+> oxirgi kod o'zgarishi — 2026-10-15, PR #10)
 
 ## Hozirgi holat (koddan)
 - **Bare React Native CLI 0.85.3** (New Architecture, Hermes), Expo olib
@@ -103,6 +104,13 @@
 - Mavzu: Telegram'ga yaqin ranglar, 7 ta asosiy rang, kunduzgi/tungi rejimga doira
   animatsiyasi bilan o'tish (`ThemeReveal`, react-native-svg mask).
 
+#### 2026-10-15: istoriyalar va chat ekrani (kod yozildi, telefonda hali sinalmagan)
+- Istoriyalar: chatlar ustida qator, ko'ruvchi, joylash.
+- Xabarlarni tanlash (bir nechtasini), Telegram uslubidagi biriktirish oynasi,
+  native galereya va joylashuv, qoralamalar, klaviatura bilan ishlash.
+- Maxfiylik: Premium sozlamalari Telegram'dagidek (yulduzcha, qulf).
+- Mavzu almashish tezlashtirildi; pull-to-refresh olib tashlandi.
+
 #### Telegram bilan tenglik ro'yxati (ghost mode'dan oldin)
 | Funksiya | Holat |
 |---|---|
@@ -176,6 +184,7 @@ va boshqa qo'shimchalar. Platforma: avval Android, keyin iOS.
 - TDLib iOS build, App Store talablari.
 
 ## Keyingi sessiya uchun
-Repo: `uzbek-tg`. "CLAUDE.md va docs/REJA.md ni o'qi, 0-fazani boshla:
-Expo'dan bare RN CLI'ga ko'chir (KidsWear repodagi android/ va apk-release.yml
-namuna), mock ma'lumot bilan APK telefonda ochilsin."
+Repo: `uzbek-tg`. 0 va 1-fazalar tugagan, 2-faza davom etmoqda. "CLAUDE.md va
+docs/REJA.md ni o'qi. Tenglik ro'yxatidagi ⏳ bandlarni egasi oxirgi APK'da
+sinasin; tasdiqlanganlarini ✅ qil, chiqqan xatolarni tuzat. Keyin 3-faza —
+ghost mode."
