@@ -56,6 +56,14 @@ const locale: Locale = {
     'settings.privacy.autoDeleteTitle': "Yangi chatlarda xabarlarni avto-o'chirish",
     'settings.privacy.blocked': 'Bloklangan foydalanuvchilar',
     'settings.privacy.deleteSection': "Akkauntimni o'chirish",
+    'settings.ghost.section': 'Ghost mode',
+    'settings.ghost.master': 'Ghost mode',
+    'settings.ghost.read': "O'qildi belgisi yuborilmaydi",
+    'settings.ghost.online': 'Onlayn holati yuborilmaydi',
+    'settings.ghost.typing': '«Yozmoqda» yuborilmaydi',
+    'settings.ghost.stories': "Hikoya ko'rilgani bildirilmaydi",
+    'settings.ghost.footer':
+      "Yoqilganda suhbatdoshlar xabarlaringiz o'qilganini, onlayn ekaningizni va yozayotganingizni ko'rmaydi. Ochilgan chatlardagi o'qilmaganlar hisobi faqat sizda tozalanadi va ilova qayta ochilganda qaytib chiqishi mumkin.",
     'settings.privacy.ifAway': 'Agar kirmasam',
     'settings.privacy.ifAwayTitle': "Shuncha vaqt kirmasam, akkaunt o'chirilsin",
     'settings.privacy.accountTtlFooter':
@@ -329,6 +337,14 @@ const locale: Locale = {
     'settings.privacy.autoDeleteTitle': 'Auto-delete messages in new chats',
     'settings.privacy.blocked': 'Blocked Users',
     'settings.privacy.deleteSection': 'Delete my account',
+    'settings.ghost.section': 'Ghost mode',
+    'settings.ghost.master': 'Ghost mode',
+    'settings.ghost.read': "Don't send read receipts",
+    'settings.ghost.online': "Don't show online status",
+    'settings.ghost.typing': "Don't send typing status",
+    'settings.ghost.stories': "Don't mark stories as viewed",
+    'settings.ghost.footer':
+      "While on, others won't see that you read their messages, that you're online or that you're typing. Messages you open are cleared from your unread count locally, but may reappear after an app restart.",
     'settings.privacy.ifAway': 'If away for',
     'settings.privacy.ifAwayTitle': 'Delete my account if away for',
     'settings.privacy.accountTtlFooter':
@@ -600,6 +616,14 @@ const locale: Locale = {
     'settings.privacy.autoDeleteTitle': 'Автоудаление сообщений в новых чатах',
     'settings.privacy.blocked': 'Заблокированные',
     'settings.privacy.deleteSection': 'Автоматическое удаление аккаунта',
+    'settings.ghost.section': 'Режим призрака',
+    'settings.ghost.master': 'Режим призрака',
+    'settings.ghost.read': 'Не отправлять отметку «прочитано»',
+    'settings.ghost.online': 'Не показывать «в сети»',
+    'settings.ghost.typing': 'Не отправлять «печатает…»',
+    'settings.ghost.stories': 'Не отмечать просмотр историй',
+    'settings.ghost.footer':
+      'Пока режим включён, другие не видят, что вы прочитали сообщения, что вы в сети и что вы печатаете. Открытые чаты сбрасываются в счётчике непрочитанных только локально и могут вернуться после перезапуска приложения.',
     'settings.privacy.ifAway': 'Если я не захожу',
     'settings.privacy.ifAwayTitle': 'Удалить аккаунт, если я не захожу',
     'settings.privacy.accountTtlFooter':

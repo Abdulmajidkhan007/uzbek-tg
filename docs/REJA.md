@@ -135,6 +135,34 @@
 | Izohlar (post thread), albomlar bitta bubble'da, animatsiyali stiker | ❌ yo'q / qisman |
 | Qo'ng'iroqlar | ❌ (WebRTC kerak) |
 
+### 3-faza: ghost mode (2026-10-25) — kod yozildi, telefonda sinalmagan
+- Sozlamalar → Maxfiylik va xavfsizlik → «Ghost mode»: umumiy kalit + 4 ta alohida
+  kalit (o'qildi, onlayn, yozmoqda, hikoyalar). Holat `ui.store` prefs'ida
+  (AsyncStorage), ilova qayta ochilganda tiklanadi. Yagona joy: `src/services/tdlib/ghost.ts`
+  (`isGhost('read'|'online'|'typing'|'stories')`).
+- O'qildi: `markRead` va «O'qilgan deb belgilash» (`markChatRead`) `viewMessages` chaqirmaydi;
+  o'qilmaganlar hisobi faqat qurilmada tozalanadi (ilova qayta ochilsa qaytishi mumkin).
+  `openChat`/`closeChat` qoldirildi: td_api.tl'da ular o'qildi yuborishi aytilmagan
+  («Many useful activities depend on the chat being opened», o'qish esa `viewMessages` orqali) —
+  lekin buni telefonda ikkinchi akkaunt bilan tasdiqlash kerak.
+- Onlayn: `setOption online` — oldingi plan va ghost o'chiq bo'lsagina `true`
+  (avval kodda `online` umuman qo'yilmagan edi, endi AppState bilan boshqariladi).
+- Yozmoqda: `sendTyping` (matn va ovoz yozish) ghost'da hech narsa yubormaydi;
+  `sendChatAction` boshqa joyda yo'q.
+- Hikoyalar: `openStory`/`closeStory` ghost'da yuborilmaydi (ko'rilgan hisoblanmaydi;
+  TDLib'da boshqa `readStory` yo'q).
+- Chat sarlavhasidagi belgi — qilinmadi (ixtiyoriy edi).
+- Cheklov (Telegram serveri, mijozga bog'liq emas): ghost'da ham chatga **xabar yuborsangiz**,
+  server odatda shu chatdagi kiruvchi xabarlarni o'qilgan deb belgilaydi va sizni qisqa vaqt
+  «online» ko'rsatadi. Telefonda sinashda shuni ham tekshiring (ishlatuvchiga ogohlantirish kerakmi).
+- Sinash (ikkinchi akkaunt bilan): 1) ghost'ni yoqib, 2-akkauntdan xabar yuboring →
+  chatni oching: 2-akkauntda ✓✓ ko'k bo'lmasligi kerak; 2) ghost'ni o'chiring → xuddi shu
+  chatda ✓✓ paydo bo'lishi kerak; 3) ilovani oldingi planda ushlab turing: 2-akkaunt
+  profilida «online» ko'rinmasligi (o'chiqda — ko'rinishi); 4) matn yozing / ovoz
+  yozing: 2-akkaunt chatida «yozmoqda» chiqmasligi; 5) 2-akkaunt hikoya qo'ysin →
+  ko'ring: hikoya egasining «ko'rganlar» ro'yxatida siz bo'lmasligi; 6) ilovani yopib
+  qayta oching: kalitlar saqlanib qolganini tekshiring.
+
 ### Release imzo kaliti
 - `.github/workflows/release-keystore.yml` (qo'lda, `confirm=HA`) — PKCS12 kalit
   (alias `uzbektg`, RSA 4096, tasodifiy parol) yaratib, 1 kunlik artifact beradi.
@@ -184,7 +212,7 @@ va boshqa qo'shimchalar. Platforma: avval Android, keyin iOS.
 - TDLib iOS build, App Store talablari.
 
 ## Keyingi sessiya uchun
-Repo: `uzbek-tg`. 0 va 1-fazalar tugagan, 2-faza davom etmoqda. "CLAUDE.md va
+Repo: `uzbek-tg`. 0 va 1-fazalar tugagan, 2-faza davom etmoqda, 3-faza (ghost mode) kodi yozildi, sinalmagan. "CLAUDE.md va
 docs/REJA.md ni o'qi. Tenglik ro'yxatidagi ⏳ bandlarni egasi oxirgi APK'da
 (`docs/SINOV-ROYXATI.md` bo'yicha)
 sinasin; tasdiqlanganlarini ✅ qil, chiqqan xatolarni tuzat. Keyin 3-faza —

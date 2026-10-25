@@ -50,6 +50,12 @@ export interface Prefs {
   keepMedia: { private: number; groups: number; channels: number };
   /** Kesh chegarasi (GB; 0 = cheksiz). */
   maxCacheGb: number;
+  /** Ghost mode: umumiy kalit va har bir tur uchun alohida kalit (services/tdlib/ghost.ts). */
+  ghostEnabled: boolean;
+  ghostRead: boolean;
+  ghostOnline: boolean;
+  ghostTyping: boolean;
+  ghostStories: boolean;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -72,6 +78,11 @@ export const DEFAULT_PREFS: Prefs = {
   },
   keepMedia: { private: 0, groups: 30, channels: 7 },
   maxCacheGb: 5,
+  ghostEnabled: false,
+  ghostRead: true,
+  ghostOnline: true,
+  ghostTyping: true,
+  ghostStories: true,
 };
 
 function detectLanguage(): Lang {
