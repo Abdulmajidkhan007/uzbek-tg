@@ -152,6 +152,9 @@
 - Hikoyalar: `openStory`/`closeStory` ghost'da yuborilmaydi (ko'rilgan hisoblanmaydi;
   TDLib'da boshqa `readStory` yo'q).
 - Chat sarlavhasidagi belgi — qilinmadi (ixtiyoriy edi).
+- Cheklov (Telegram serveri, mijozga bog'liq emas): ghost'da ham chatga **xabar yuborsangiz**,
+  server odatda shu chatdagi kiruvchi xabarlarni o'qilgan deb belgilaydi va sizni qisqa vaqt
+  «online» ko'rsatadi. Telefonda sinashda shuni ham tekshiring (ishlatuvchiga ogohlantirish kerakmi).
 - Sinash (ikkinchi akkaunt bilan): 1) ghost'ni yoqib, 2-akkauntdan xabar yuboring →
   chatni oching: 2-akkauntda ✓✓ ko'k bo'lmasligi kerak; 2) ghost'ni o'chiring → xuddi shu
   chatda ✓✓ paydo bo'lishi kerak; 3) ilovani oldingi planda ushlab turing: 2-akkaunt
