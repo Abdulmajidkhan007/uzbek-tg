@@ -186,5 +186,6 @@ va boshqa qo'shimchalar. Platforma: avval Android, keyin iOS.
 ## Keyingi sessiya uchun
 Repo: `uzbek-tg`. 0 va 1-fazalar tugagan, 2-faza davom etmoqda. "CLAUDE.md va
 docs/REJA.md ni o'qi. Tenglik ro'yxatidagi ⏳ bandlarni egasi oxirgi APK'da
+(`docs/SINOV-ROYXATI.md` bo'yicha)
 sinasin; tasdiqlanganlarini ✅ qil, chiqqan xatolarni tuzat. Keyin 3-faza —
 ghost mode."
