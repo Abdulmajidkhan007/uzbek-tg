@@ -2,9 +2,9 @@
  * Chatlar va xabarlar sinxronizatsiyasi: TDLib update'laridan lokal kesh
  * (chat/user obyektlari) yig'iladi va UI uchun useChatStore'ga yoziladi.
  *
- * Ghost mode (3-faza) uchun: o'qilgan belgisi faqat `markRead` orqali,
+ * Ghost mode (ghost.ts): o'qilgan belgisi faqat `markRead` / `markChatRead`,
  * "yozmoqda" holati faqat `sendTyping` orqali yuboriladi — boshqa joyda
- * viewMessages / sendChatAction chaqirilmaydi.
+ * viewMessages / sendChatAction chaqirilmaydi, va hammasi isGhost() dan o'tadi.
  */
 import {
   useChatStore,
@@ -19,6 +19,7 @@ import {
 } from '@/stores/chat.store';
 import { t, tp } from '@/i18n';
 import { shouldAutoDownload } from '@/services/autoDownload';
+import { isGhost } from './ghost';
 import { onTdUpdate, td } from './client';
 import {
   downloadProgressOf,
@@ -1409,6 +1410,10 @@ export async function closeChat(chatIdStr: string): Promise<void> {
 /** O'qilgan deb belgilash (Telegram'ga "o'qildi" yuboradi). */
 export async function markRead(chatIdStr: string): Promise<void> {
   const chatId = Number(chatIdStr);
+  if (isGhost('read')) {
+    useChatStore.getState().markChatAsRead(chatIdStr);
+    return;
+  }
   const list = history.get(chatId);
   if (!list || list.length === 0) return;
   await td({
@@ -1423,9 +1428,10 @@ const lastTyping = new Map<string, number>();
 
 /**
  * "Yozmoqda..." holatini yuboradi (4 soniyada ko'pi bilan bir marta).
- * Ghost mode keyinroq shu funksiyani o'chiradi.
+ * Ghost mode yoqilgan bo'lsa hech narsa yuborilmaydi.
  */
 export function sendTyping(chatIdStr: string, action: 'chatActionTyping' | 'chatActionRecordingVoiceNote' | 'chatActionCancel' = 'chatActionTyping'): void {
+  if (isGhost('typing')) return;
   const key = `${chatIdStr}:${action}`;
   const now = Date.now();
   if (action !== 'chatActionCancel' && now - (lastTyping.get(key) ?? 0) < 4000) return;
@@ -2306,7 +2312,9 @@ export async function setChatArchived(chatIdStr: string, archived: boolean): Pro
 export async function markChatRead(chatIdStr: string): Promise<void> {
   const chat = chats.get(Number(chatIdStr));
   const last = chat?.last_message?.id;
-  if (last) {
+  if (isGhost('read')) {
+    useChatStore.getState().markChatAsRead(chatIdStr);
+  } else if (last) {
     await td({ '@type': 'viewMessages', chat_id: Number(chatIdStr), message_ids: [last], force_read: true });
   }
   await td({ '@type': 'toggleChatIsMarkedAsUnread', chat_id: Number(chatIdStr), is_marked_as_unread: false }).catch(

@@ -5,7 +5,7 @@
  * getAccountTtl.
  */
 import React, { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import { ScrollView, StyleSheet, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import type { StackScreenProps } from '@react-navigation/stack';
@@ -17,6 +17,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { showActionSheet, showAlert } from '@/components/ui/Dialog';
 import type { PrivacySettingKey, SettingsStackParamList } from '@/navigation/types';
 import { useAuthStore } from '@/stores/auth.store';
+import { useUIStore, type Prefs } from '@/stores/ui.store';
 import {
   errorText,
   formatDays,
@@ -54,6 +55,13 @@ const PRIVACY_ROWS_2: { key: PrivacySettingKey; label: string; icon: string; col
   { key: 'allowChatInvites', label: 'settings.privacy.invites', icon: 'people', color: '#F59B2B' },
 ];
 
+const GHOST_ROWS: { key: 'ghostRead' | 'ghostOnline' | 'ghostTyping' | 'ghostStories'; label: string; icon: string; color: string }[] = [
+  { key: 'ghostRead', label: 'settings.ghost.read', icon: 'checkmark-done', color: '#3E9BEA' },
+  { key: 'ghostOnline', label: 'settings.ghost.online', icon: 'radio-button-on', color: '#5DBB5A' },
+  { key: 'ghostTyping', label: 'settings.ghost.typing', icon: 'create', color: '#F59B2B' },
+  { key: 'ghostStories', label: 'settings.ghost.stories', icon: 'aperture', color: '#9C6ADE' },
+];
+
 const AUTO_DELETE_OPTIONS = [0, 86400, 7 * 86400, 31 * 86400];
 const ACCOUNT_TTL_OPTIONS = [30, 90, 180, 365];
 
@@ -71,6 +79,17 @@ export function privacyValue(s: PrivacySummary | undefined, t: Translator): stri
 export function PrivacySettingsScreen({ navigation }: Props): React.JSX.Element {
   const c = useTheme().colors;
   const t = useT();
+  const ghost = useUIStore();
+  const setPrefs = useUIStore((st) => st.setPrefs);
+  const ghostSwitch = (key: keyof Prefs) => (
+    <Switch
+      value={ghost[key] as boolean}
+      onValueChange={(v) => setPrefs({ [key]: v })}
+      trackColor={{ true: c.primary, false: c.border }}
+      thumbColor="#FFFFFF"
+      style={{ marginLeft: 8 }}
+    />
+  );
   const [privacy, setPrivacy] = useState<Partial<Record<PrivacySettingKey, PrivacySummary>>>({});
   const [hasPassword, setHasPassword] = useState<boolean | null>(null);
   const [autoDelete, setAutoDelete] = useState<number | null>(null);
@@ -245,6 +264,29 @@ export function PrivacySettingsScreen({ navigation }: Props): React.JSX.Element 
               last={i === PRIVACY_ROWS_2.length - 1}
             />
           ))}
+        </SettingsCard>
+
+        <SettingsCard title={t('settings.ghost.section')} footer={t('settings.ghost.footer')}>
+          <SettingsRow
+            icon="eye-off"
+            color="#8E99A4"
+            label={t('settings.ghost.master')}
+            onPress={() => setPrefs({ ghostEnabled: !ghost.ghostEnabled })}
+            right={ghostSwitch('ghostEnabled')}
+            last={!ghost.ghostEnabled}
+          />
+          {ghost.ghostEnabled &&
+            GHOST_ROWS.map((row, i) => (
+              <SettingsRow
+                key={row.key}
+                icon={row.icon}
+                color={row.color}
+                label={t(row.label)}
+                onPress={() => setPrefs({ [row.key]: !ghost[row.key] })}
+                right={ghostSwitch(row.key)}
+                last={i === GHOST_ROWS.length - 1}
+              />
+            ))}
         </SettingsCard>
 
         <SettingsCard title={t('settings.privacy.deleteSection')} footer={t('settings.privacy.accountTtlFooter')}>

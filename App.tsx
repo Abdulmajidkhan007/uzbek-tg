@@ -16,6 +16,7 @@ import { td } from '@/services/tdlib/client';
 import { startNotifications, stopNotifications, consumeLaunchChat } from '@/services/notifications';
 import { onOpenChatFromNotification } from '@/services/native';
 import { startNetworkSync, startStoragePolicy } from '@/services/tdlib/storage';
+import { startGhost } from '@/services/tdlib/ghost';
 import { startStories, stopStories } from '@/services/tdlib/stories';
 import type { RootStackParamList } from '@/navigation/types';
 
@@ -55,6 +56,7 @@ function useSessionServices(): void {
   useEffect(() => {
     if (!isAuthenticated) return;
     startNotifications();
+    startGhost();
     startNetworkSync();
     startStoragePolicy();
     startStories();

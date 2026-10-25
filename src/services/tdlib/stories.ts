@@ -10,6 +10,7 @@
  * - openStory TDLib'ga hikoya ko'rilayotganini aytadi (shu bilan o'qilgan
  *   deb belgilanadi, max_read_story_id yangilanadi).
  */
+import { isGhost } from './ghost';
 import { onTdUpdate, td, TdError } from './client';
 import { fileUri, onFilesChanged, requestFile } from './files';
 import type { TdFile, TdObject } from './types';
@@ -356,10 +357,12 @@ export function onStoriesChanged(fn: () => void): () => void {
 }
 
 export function openStory(chatIdStr: string, storyId: number): void {
+  if (isGhost('stories')) return;
   void td({ '@type': 'openStory', story_poster_chat_id: Number(chatIdStr), story_id: storyId }).catch(() => undefined);
 }
 
 export function closeStory(chatIdStr: string, storyId: number): void {
+  if (isGhost('stories')) return;
   void td({ '@type': 'closeStory', story_poster_chat_id: Number(chatIdStr), story_id: storyId }).catch(
     () => undefined,
   );
