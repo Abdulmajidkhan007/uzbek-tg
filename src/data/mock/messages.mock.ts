@@ -1,5 +1,5 @@
 import { ChatMessage } from '@/stores/chat.store';
-import { currentUser, mockUsers, mockUsersMap } from './users.mock';
+import { currentUser, mockUsersMap } from './users.mock';
 
 // Helper function to generate waveform array
 const generateWaveform = (): number[] => {

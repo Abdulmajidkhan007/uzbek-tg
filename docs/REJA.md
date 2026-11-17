@@ -163,13 +163,26 @@
   ko'ring: hikoya egasining «ko'rganlar» ro'yxatida siz bo'lmasligi; 6) ilovani yopib
   qayta oching: kalitlar saqlanib qolganini tekshiring.
 
+### Telefonda sinash checklist'i (barchasi hali SINALMAGAN — holat o'zgarmagan)
+Joylashgan bo'limlar: 1-faza (TDLib), 2026-10-13 UI, 2026-10-14, 2026-10-15, 3-faza.
+- [ ] 1-faza: TDLib ulanishi, login (telefon → kod → parol), chatlar/xabarlar haqiqiy akkauntda
+- [ ] 2026-10-13: Telegram uslubidagi UI, ulanish holati sarlavhada, yangi ikonka
+- [ ] 2026-10-14: 3 til (uz/en/ru), Til ekrani, `AppNative` (ekran surati, mavzu animatsiyasi)
+- [ ] 2026-10-15: istoriyalar (qator, ko'ruvchi, joylash), xabarlarni tanlash, biriktirish oynasi
+- [ ] Ghost mode (ikkinchi akkaunt bilan): 1) yoqiq — ✓✓ ko'k bo'lmasin; 2) o'chiq — ✓✓ paydo bo'lsin;
+      3) onlayn ko'rinmasin; 4) «yozmoqda» chiqmasin; 5) hikoya ko'rganlarida bo'lmaslik;
+      6) kalitlar qayta ochilganda saqlansin; `openChat` o'qildi yubormasligini tasdiqlash;
+      xabar yuborganda serverning o'qilgan/online cheklovi
+- [ ] Release imzo: debug → release o'tishda ilovani o'chirib qayta o'rnatish
+
 ### Release imzo kaliti
 - `.github/workflows/release-keystore.yml` (qo'lda, `confirm=HA`) — PKCS12 kalit
   (alias `uzbektg`, RSA 4096, tasodifiy parol) yaratib, 1 kunlik artifact beradi.
 - Egasi 2 ta secret qo'yadi: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`;
   `.jks` faylni zaxiralaydi (yo'qolsa ilovani yangilab bo'lmaydi).
-- APK workflow'i secret bo'lsa release kalit bilan, bo'lmasa debug kalit bilan
-  imzolaydi (release notes'da `Imzo: release|debug`). Debug → release o'tishda
+- APK workflow'i secret bo'lsa release kalit bilan imzolaydi. `main` da secret yo'q
+  bo'lsa xato bilan to'xtaydi (U-3); boshqa branch'da debug kalit (release notes'da
+  `Imzo: release|debug`). Debug → release o'tishda
   telefondagi ilovani bir marta o'chirib qayta o'rnatish kerak.
 
 ## Maqsad
@@ -217,3 +230,11 @@ docs/REJA.md ni o'qi. Tenglik ro'yxatidagi ⏳ bandlarni egasi oxirgi APK'da
 (`docs/SINOV-ROYXATI.md` bo'yicha)
 sinasin; tasdiqlanganlarini ✅ qil, chiqqan xatolarni tuzat. Keyin 3-faza —
 ghost mode."
+
+
+## Egasi qarori kerak: ghost mode va Telegram API shartlari (U-2)
+- Ghost mode (o'qildi/onlayn/yozmoqda/hikoya ko'rilmasligi) Telegram API Terms of Service
+  bilan to'qnashishi mumkin. Xavf: `api_id` bloklanishi (barcha foydalanuvchilar ilovasi
+  ishlamay qoladi) va Play Market'da rad etilishi.
+- Variant: ghost mode'ni alohida build flavor'ga ajratish (asosiy flavor'da yo'q).
+- Qaror: egasi. Kod hozircha O'ZGARTIRILMAGAN.

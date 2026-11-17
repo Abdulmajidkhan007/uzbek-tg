@@ -7,9 +7,9 @@
 # TDLib (libtdjsonjava.so) "TDLib Android" workflow'i yig'gan release'dan olinadi;
 # u hali tayyor bo'lmasa bu run APK chiqarmaydi va TDLib tugagach o'zi qayta ishlaydi.
 #
-# Imzo: android/keystore.properties repoda yo'q, shuning uchun release build
-# debug kalit bilan imzolanadi — telefonga o'rnatish uchun yetarli, Play
-# Store uchun EMAS.
+# Imzo: keystore secret'lari `main` da majburiy (yo'q bo'lsa workflow xato bilan
+# to'xtaydi). Boshqa branch'larda (workflow_dispatch) debug kalit — faqat sinov.
+# Lokal build ta'sirlanmaydi (build.gradle o'zgarmagan).
 name: APK Release
 
 on:
@@ -86,6 +86,10 @@ jobs:
           KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ]; then
+            if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+              echo "::error title=Release kaliti yo'q::ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD secret'lari berilmagan. main'dagi release APK debug kalit bilan imzolanmaydi — secret'larni qo'shing (release-keystore.yml)."
+              exit 1
+            fi
             echo "::warning::ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD yo'q — APK debug kalit bilan imzolanadi (tarqatish uchun emas)."
             exit 0
           fi

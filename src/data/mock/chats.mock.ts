@@ -1,5 +1,5 @@
 import { Chat, ChatMessage } from '@/stores/chat.store';
-import { currentUser, mockUsers, mockUsersMap } from './users.mock';
+import { mockUsersMap } from './users.mock';
 
 // Helper to create a last message for a chat
 const createLastMessage = (chatId: string, senderId: string, text: string, hoursAgo: number): ChatMessage => ({

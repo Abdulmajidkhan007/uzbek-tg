@@ -66,6 +66,7 @@ jobs:
           git checkout -q FETCH_HEAD
 
       - name: Yig'ish (arm64-v8a, armeabi-v7a)
+        id: build
         if: steps.v.outputs.exists != 'true'
         run: |
           set -o pipefail
@@ -76,6 +77,9 @@ jobs:
             exit 1
           fi
           cd "$RUNNER_TEMP/out" && zip -qr "$RUNNER_TEMP/tdlib-android.zip" libs java
+          SHA=$(sha256sum "$RUNNER_TEMP/tdlib-android.zip" | cut -d' ' -f1)
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "::notice title=TDLIB_SHA256::$SHA — android/tdlib.env ga yozing"
 
       - name: Release
         if: steps.v.outputs.exists != 'true'
@@ -85,5 +89,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "TDLib $TAG (Android)" \
-            --notes "TDLib ${{ steps.v.outputs.commit }} — libtdjsonjava.so (arm64-v8a, armeabi-v7a). APK workflow'i shundan foydalanadi." \
+            --notes "TDLib ${{ steps.v.outputs.commit }} — libtdjsonjava.so (arm64-v8a, armeabi-v7a). SHA-256: ${{ steps.build.outputs.sha256 }}. APK workflow'i shundan foydalanadi." \
             --latest=false
