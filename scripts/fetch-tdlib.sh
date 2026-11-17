@@ -15,6 +15,15 @@ if ! gh release download "$TAG" --repo "$REPO" --pattern 'tdlib-android.zip' --d
   echo "TDLib release $TAG topilmadi"
   exit 1
 fi
+if [ -z "${TDLIB_SHA256:-}" ]; then
+  echo "android/tdlib.env da TDLIB_SHA256 yo'q — arxiv tekshirilmasdan ishlatilmaydi"
+  exit 1
+fi
+ACTUAL=$(sha256sum "$TMP/tdlib-android.zip" | cut -d' ' -f1)
+if [ "$ACTUAL" != "$TDLIB_SHA256" ]; then
+  echo "TDLib arxivi SHA-256 mos kelmadi: kutilgan $TDLIB_SHA256, haqiqiy $ACTUAL"
+  exit 1
+fi
 rm -rf "$ROOT/android/app/src/main/jniLibs"
 mkdir -p "$ROOT/android/app/src/main/jniLibs"
 unzip -q "$TMP/tdlib-android.zip" -d "$TMP/x"

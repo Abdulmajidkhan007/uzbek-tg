@@ -118,6 +118,7 @@ export function OTPScreen({ navigation, route }: Props): React.JSX.Element {
       if (countdownRef.current) clearInterval(countdownRef.current);
       if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- faqat mount
   }, []);
 
   const startCountdown = useCallback(() => {
@@ -209,6 +210,7 @@ export function OTPScreen({ navigation, route }: Props): React.JSX.Element {
         }
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- OTP_LENGTH store-dan, xulq saqlanadi
     [digits, verifyOTP]
   );
 
@@ -248,6 +250,7 @@ export function OTPScreen({ navigation, route }: Props): React.JSX.Element {
     setTimeout(() => {
       inputRefs.current[0]?.focus();
     }, 100);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- OTP_LENGTH store-dan, rejim o‘zgarmaydi; xulq saqlanadi
   }, [isResendActive, startCountdown, showToast, t]);
 
   useEffect(() => {
